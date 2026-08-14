@@ -16,6 +16,8 @@ backend/build/
 # --- Node ---
 node_modules/
 frontend/.next/
+frontend/next-env.d.ts
+frontend/*.tsbuildinfo
 frontend/out/
 frontend/dist/
 frontend/coverage/
