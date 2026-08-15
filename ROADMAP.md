@@ -36,11 +36,11 @@ a spec.
 ## Day 11-12 — Observability & ops
 - [x] Structured logging (backend + frontend)
 - [ ] Error tracking (Sentry or equivalent)
-- [ ] Health/readiness probes for orchestration
+- [x] Health/readiness probes for orchestration
 - [ ] Basic usage metrics/analytics hook
 
 ## Day 13-14 — Ship prep
-- [ ] Production Dockerfiles (multi-stage, non-root, slim images)
+- [x] Production Dockerfiles (multi-stage, non-root, slim images)
 - [ ] Deploy target decided + documented (e.g. Fly.io/Render/ECS)
 - [ ] Staging environment smoke-tested end-to-end
 - [ ] PRD finalized against what actually shipped
