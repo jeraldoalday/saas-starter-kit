@@ -62,10 +62,15 @@ docker compose up --build
 
 **Backend**
 
+Requires Python 3.11+ (the code uses `StrEnum` and PEP 604 unions at runtime).
+If your system Python is older, [uv](https://docs.astral.sh/uv/) can fetch a
+standalone interpreter without touching it:
+
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+uv venv --python 3.12 .venv        # or: python -m venv .venv
+source .venv/bin/activate
+uv pip install -e ".[dev]"         # or: pip install -e ".[dev]"
 alembic upgrade head
 uvicorn app.main:app --reload
 ```

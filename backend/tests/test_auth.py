@@ -5,6 +5,33 @@ def _register(client, email="user@example.com", password="s3cret-password"):
     )
 
 
+def test_register_rejects_short_password(client):
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"email": "short@example.com", "password": "abc123", "full_name": None},
+    )
+    assert response.status_code == 422
+
+
+def test_register_rejects_overlong_password(client):
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"email": "long@example.com", "password": "a" * 100, "full_name": None},
+    )
+    assert response.status_code == 422
+
+
+def test_password_is_hashed_not_stored_plaintext(client, db_session):
+    from app.models.user import User
+
+    _register(client, email="hash@example.com")
+
+    user = db_session.query(User).filter(User.email == "hash@example.com").first()
+    assert user is not None
+    assert user.hashed_password != "s3cret-password"
+    assert user.hashed_password.startswith("$2b$")
+
+
 def test_register_creates_user(client):
     response = _register(client)
     assert response.status_code == 201
