@@ -6,8 +6,15 @@ from sqlalchemy.orm import Session
 from app.api.deps_rate_limit import login_rate_limit, register_rate_limit
 from app.core.security import TokenType, create_access_token, decode_token
 from app.database import get_db
+from app.deps import get_current_user
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RefreshRequest, TokenPair
+from app.schemas.auth import (
+    LoginRequest,
+    MessageResponse,
+    RefreshRequest,
+    TokenPair,
+    VerifyEmailRequest,
+)
 from app.schemas.user import UserCreate, UserRead
 from app.services.auth_service import (
     EmailAlreadyRegisteredError,
@@ -16,6 +23,7 @@ from app.services.auth_service import (
     issue_token_pair,
     register_user,
 )
+from app.services.verification_service import send_verification_email, verify_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -33,7 +41,36 @@ def register(data: UserCreate, db: Session = Depends(get_db)) -> UserRead:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         ) from exc
+
+    send_verification_email(db, user)
     return user
+
+
+@router.post("/verify-email", response_model=MessageResponse)
+def verify_email_endpoint(
+    data: VerifyEmailRequest, db: Session = Depends(get_db)
+) -> MessageResponse:
+    user = verify_email(db, data.token)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification link is invalid or has expired",
+        )
+    return MessageResponse(detail="Email verified")
+
+
+@router.post(
+    "/resend-verification",
+    response_model=MessageResponse,
+    dependencies=[Depends(register_rate_limit)],
+)
+def resend_verification(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> MessageResponse:
+    send_verification_email(db, current_user)
+    # Same response whether or not an email went out, so this can't be used
+    # to probe which accounts are already verified.
+    return MessageResponse(detail="If the address needs verification, an email was sent")
 
 
 @router.post(

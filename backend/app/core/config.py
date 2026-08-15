@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     # while developing.
     log_json: bool = True
 
+    # Off by default: with the console email transport the verification link
+    # only reaches the logs, so gating routes on it would block local dev.
+    # Turn on wherever real email is configured.
+    require_email_verification: bool = False
+
     # "console" logs emails instead of sending; "smtp" delivers for real.
     email_backend: str = "console"
     email_from: str = "no-reply@example.com"

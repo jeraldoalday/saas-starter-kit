@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, get_verified_user
 from app.models.user import User
 from app.schemas.billing import (
     CheckoutSessionResponse,
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 
 @router.post("/checkout", response_model=CheckoutSessionResponse)
 def checkout(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_user),
     db: Session = Depends(get_db),
 ) -> CheckoutSessionResponse:
     url = create_checkout_session(db, current_user)
@@ -31,7 +31,7 @@ def checkout(
 
 @router.post("/portal", response_model=PortalSessionResponse)
 def portal(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_user),
     db: Session = Depends(get_db),
 ) -> PortalSessionResponse:
     try:

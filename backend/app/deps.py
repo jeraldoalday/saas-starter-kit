@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.security import TokenType, decode_token
 from app.database import get_db
 from app.models.user import User
@@ -38,3 +39,19 @@ def get_current_user(
         raise unauthorized
 
     return user
+
+
+def get_verified_user(current_user: User = Depends(get_current_user)) -> User:
+    """Require a confirmed email address.
+
+    Gate routes that act on the outside world (billing, invites) on this
+    rather than on get_current_user, so an unconfirmed address can't be used
+    to drive them. REQUIRE_EMAIL_VERIFICATION turns the gate off for local
+    development, where the console email transport is the only delivery.
+    """
+    if get_settings().require_email_verification and not current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email address must be verified first",
+        )
+    return current_user
