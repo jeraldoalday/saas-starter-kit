@@ -3,6 +3,7 @@ import uuid
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.core.security import MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH
+from app.models.role import Role
 
 
 class UserCreate(BaseModel):
@@ -21,3 +22,8 @@ class UserRead(BaseModel):
     full_name: str | None
     is_active: bool
     is_verified: bool
+    role: str
+
+
+class UserRoleUpdate(BaseModel):
+    role: Role

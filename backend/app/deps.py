@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import TokenType, decode_token
 from app.database import get_db
+from app.models.role import Role, satisfies
 from app.models.user import User
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -39,6 +40,30 @@ def get_current_user(
         raise unauthorized
 
     return user
+
+
+class RequireRole:
+    """Dependency requiring at least `minimum_role`.
+
+    Roles are ranked, so a route asks for the least privilege that will do
+    and anything higher is admitted automatically.
+    """
+
+    def __init__(self, minimum_role: Role) -> None:
+        self.minimum_role = minimum_role
+
+    def __call__(self, current_user: User = Depends(get_current_user)) -> User:
+        if not satisfies(current_user.role, self.minimum_role):
+            # 403 not 404: the caller is authenticated, just not permitted.
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires {self.minimum_role.value} role or higher",
+            )
+        return current_user
+
+
+require_admin = RequireRole(Role.ADMIN)
+require_owner = RequireRole(Role.OWNER)
 
 
 def get_verified_user(current_user: User = Depends(get_current_user)) -> User:

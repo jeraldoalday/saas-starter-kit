@@ -28,7 +28,7 @@ a spec.
 - [ ] Account deletion / data export (GDPR-adjacent basics)
 
 ## Day 9-10 — Access control & hardening
-- [ ] Role-based access control (owner/admin/member)
+- [x] Role-based access control (owner/admin/member)
 - [x] Rate limiting on auth endpoints
 - [x] Input validation audit + security headers
 - [ ] Secrets management review (no plaintext secrets in repo/CI)
