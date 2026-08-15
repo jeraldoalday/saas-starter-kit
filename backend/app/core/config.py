@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     # while developing.
     log_json: bool = True
 
+    # "console" logs emails instead of sending; "smtp" delivers for real.
+    email_backend: str = "console"
+    email_from: str = "no-reply@example.com"
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_price_id_monthly: str = ""

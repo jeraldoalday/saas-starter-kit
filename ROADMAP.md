@@ -22,7 +22,7 @@ a spec.
 - [x] Subscription state sync (past_due, canceled, trial)
 
 ## Day 6-8 — Account lifecycle
-- [ ] Transactional email (verification, password reset) via provider
+- [x] Transactional email (verification, password reset) via provider
 - [ ] Email verification gate on protected routes
 - [ ] Password reset flow end-to-end
 - [ ] Account deletion / data export (GDPR-adjacent basics)
