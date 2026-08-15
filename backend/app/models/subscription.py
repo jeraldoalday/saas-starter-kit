@@ -1,14 +1,18 @@
 import uuid
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
+if TYPE_CHECKING:
+    from app.models.user import User
 
-class SubscriptionStatus(str, Enum):
+
+class SubscriptionStatus(StrEnum):
     TRIALING = "trialing"
     ACTIVE = "active"
     PAST_DUE = "past_due"
@@ -29,7 +33,7 @@ class Subscription(Base):
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
 
     user: Mapped["User"] = relationship(back_populates="subscription")

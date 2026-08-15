@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import stripe
 from sqlalchemy.orm import Session
@@ -90,5 +90,5 @@ def _apply_subscription_update(db: Session, subscription_obj: dict) -> None:
     subscription.status = subscription_obj.get("status", subscription.status)
     period_end = subscription_obj.get("current_period_end")
     if period_end:
-        subscription.current_period_end = datetime.fromtimestamp(period_end, tz=timezone.utc)
+        subscription.current_period_end = datetime.fromtimestamp(period_end, tz=UTC)
     db.commit()
