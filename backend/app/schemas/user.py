@@ -27,3 +27,8 @@ class UserRead(BaseModel):
 
 class UserRoleUpdate(BaseModel):
     role: Role
+
+
+class DeleteAccountRequest(BaseModel):
+    # Re-authentication, so a stolen access token alone can't delete an account.
+    password: str

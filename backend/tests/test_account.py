@@ -1,0 +1,175 @@
+from app.models.subscription import Subscription, SubscriptionStatus
+from app.models.token import OneTimeToken, TokenPurpose
+from app.models.user import User
+from app.services.token_service import issue_token
+
+EMAIL = "account@example.com"
+PASSWORD = "s3cret-password"
+
+
+def _auth(client, email=EMAIL, password=PASSWORD):
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": password, "full_name": "Data Subject"},
+    )
+    login = client.post(
+        "/api/v1/auth/login", json={"email": email, "password": password}
+    )
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+def test_export_requires_authentication(client):
+    assert client.get("/api/v1/users/me/export").status_code == 401
+
+
+def test_export_returns_account_data(client):
+    headers = _auth(client)
+
+    response = client.get("/api/v1/users/me/export", headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["account"]["email"] == EMAIL
+    assert body["account"]["full_name"] == "Data Subject"
+    assert body["account"]["role"] == "member"
+
+
+def test_export_excludes_credentials(client):
+    headers = _auth(client)
+
+    body = client.get("/api/v1/users/me/export", headers=headers).json()
+
+    serialized = str(body)
+    assert "hashed_password" not in serialized
+    assert "token_hash" not in serialized
+
+
+def test_export_includes_subscription_when_present(client, db_session):
+    headers = _auth(client)
+    user = db_session.query(User).filter(User.email == EMAIL).one()
+    db_session.add(
+        Subscription(
+            user_id=user.id,
+            stripe_customer_id="cus_export",
+            status=SubscriptionStatus.ACTIVE.value,
+        )
+    )
+    db_session.commit()
+
+    body = client.get("/api/v1/users/me/export", headers=headers).json()
+
+    assert body["subscription"]["stripe_customer_id"] == "cus_export"
+
+
+def test_export_handles_no_subscription(client):
+    headers = _auth(client)
+
+    body = client.get("/api/v1/users/me/export", headers=headers).json()
+
+    assert body["subscription"] is None
+
+
+def test_delete_requires_the_correct_password(client):
+    headers = _auth(client)
+
+    response = client.request(
+        "DELETE",
+        "/api/v1/users/me",
+        json={"password": "wrong-password"},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+
+
+def test_delete_removes_the_account(client, db_session):
+    headers = _auth(client)
+
+    response = client.request(
+        "DELETE", "/api/v1/users/me", json={"password": PASSWORD}, headers=headers
+    )
+
+    assert response.status_code == 204
+    assert db_session.query(User).filter(User.email == EMAIL).first() is None
+
+
+def test_deleted_user_cannot_log_in(client):
+    headers = _auth(client)
+    client.request(
+        "DELETE", "/api/v1/users/me", json={"password": PASSWORD}, headers=headers
+    )
+
+    response = client.post(
+        "/api/v1/auth/login", json={"email": EMAIL, "password": PASSWORD}
+    )
+
+    assert response.status_code == 401
+
+
+def test_delete_cleans_up_tokens(client, db_session):
+    headers = _auth(client)
+    user = db_session.query(User).filter(User.email == EMAIL).one()
+    issue_token(db_session, user, TokenPurpose.PASSWORD_RESET)
+    assert db_session.query(OneTimeToken).count() > 0
+
+    client.request(
+        "DELETE", "/api/v1/users/me", json={"password": PASSWORD}, headers=headers
+    )
+
+    assert db_session.query(OneTimeToken).count() == 0
+
+
+def test_delete_cleans_up_subscription_row(client, db_session):
+    headers = _auth(client)
+    user = db_session.query(User).filter(User.email == EMAIL).one()
+    db_session.add(
+        Subscription(user_id=user.id, status=SubscriptionStatus.CANCELED.value)
+    )
+    db_session.commit()
+
+    client.request(
+        "DELETE", "/api/v1/users/me", json={"password": PASSWORD}, headers=headers
+    )
+
+    assert db_session.query(Subscription).count() == 0
+
+
+def test_delete_is_blocked_while_subscription_is_active(client, db_session):
+    """Deleting our row wouldn't stop Stripe billing them."""
+    headers = _auth(client)
+    user = db_session.query(User).filter(User.email == EMAIL).one()
+    db_session.add(
+        Subscription(user_id=user.id, status=SubscriptionStatus.ACTIVE.value)
+    )
+    db_session.commit()
+
+    response = client.request(
+        "DELETE", "/api/v1/users/me", json={"password": PASSWORD}, headers=headers
+    )
+
+    assert response.status_code == 409
+    assert "cancel" in response.json()["detail"].lower()
+    assert db_session.query(User).filter(User.email == EMAIL).first() is not None
+
+
+def test_delete_allowed_once_subscription_is_canceled(client, db_session):
+    headers = _auth(client)
+    user = db_session.query(User).filter(User.email == EMAIL).one()
+    db_session.add(
+        Subscription(user_id=user.id, status=SubscriptionStatus.CANCELED.value)
+    )
+    db_session.commit()
+
+    response = client.request(
+        "DELETE", "/api/v1/users/me", json={"password": PASSWORD}, headers=headers
+    )
+
+    assert response.status_code == 204
+
+
+def test_delete_requires_authentication(client):
+    response = client.request(
+        "DELETE", "/api/v1/users/me", json={"password": PASSWORD}
+    )
+
+    assert response.status_code == 401
