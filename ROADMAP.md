@@ -24,7 +24,7 @@ a spec.
 ## Day 6-8 — Account lifecycle
 - [x] Transactional email (verification, password reset) via provider
 - [x] Email verification gate on protected routes
-- [ ] Password reset flow end-to-end
+- [x] Password reset flow end-to-end
 - [ ] Account deletion / data export (GDPR-adjacent basics)
 
 ## Day 9-10 — Access control & hardening

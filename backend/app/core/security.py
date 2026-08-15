@@ -14,6 +14,8 @@ settings = get_settings()
 # password. Note this is bytes, not characters: multi-byte UTF-8 counts for more.
 MAX_PASSWORD_BYTES = 72
 
+MIN_PASSWORD_LENGTH = 8
+
 
 class PasswordTooLongError(ValueError):
     pass

@@ -2,9 +2,7 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.core.security import MAX_PASSWORD_BYTES
-
-MIN_PASSWORD_LENGTH = 8
+from app.core.security import MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH
 
 
 class UserCreate(BaseModel):

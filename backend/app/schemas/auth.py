@@ -1,4 +1,6 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
+
+from app.core.security import MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH
 
 
 class LoginRequest(BaseModel):
@@ -18,6 +20,17 @@ class TokenPair(BaseModel):
 
 class VerifyEmailRequest(BaseModel):
     token: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(
+        min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_BYTES
+    )
 
 
 class MessageResponse(BaseModel):

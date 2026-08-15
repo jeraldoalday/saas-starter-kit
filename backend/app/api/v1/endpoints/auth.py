@@ -3,15 +3,21 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps_rate_limit import login_rate_limit, register_rate_limit
+from app.api.deps_rate_limit import (
+    login_rate_limit,
+    password_reset_rate_limit,
+    register_rate_limit,
+)
 from app.core.security import TokenType, create_access_token, decode_token
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
 from app.schemas.auth import (
+    ForgotPasswordRequest,
     LoginRequest,
     MessageResponse,
     RefreshRequest,
+    ResetPasswordRequest,
     TokenPair,
     VerifyEmailRequest,
 )
@@ -23,6 +29,7 @@ from app.services.auth_service import (
     issue_token_pair,
     register_user,
 )
+from app.services.password_reset_service import request_password_reset, reset_password
 from app.services.verification_service import send_verification_email, verify_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -44,6 +51,39 @@ def register(data: UserCreate, db: Session = Depends(get_db)) -> UserRead:
 
     send_verification_email(db, user)
     return user
+
+
+@router.post(
+    "/forgot-password",
+    response_model=MessageResponse,
+    dependencies=[Depends(password_reset_rate_limit)],
+)
+def forgot_password(
+    data: ForgotPasswordRequest, db: Session = Depends(get_db)
+) -> MessageResponse:
+    request_password_reset(db, data.email)
+    # Deliberately identical whether or not the address exists: a differing
+    # response would turn this into an account-enumeration oracle.
+    return MessageResponse(
+        detail="If that address has an account, a reset link has been sent"
+    )
+
+
+@router.post(
+    "/reset-password",
+    response_model=MessageResponse,
+    dependencies=[Depends(password_reset_rate_limit)],
+)
+def reset_password_endpoint(
+    data: ResetPasswordRequest, db: Session = Depends(get_db)
+) -> MessageResponse:
+    user = reset_password(db, data.token, data.new_password)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset link is invalid or has expired",
+        )
+    return MessageResponse(detail="Password updated")
 
 
 @router.post("/verify-email", response_model=MessageResponse)
