@@ -4,10 +4,16 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
-from app.schemas.billing import CheckoutSessionResponse, SubscriptionRead
+from app.schemas.billing import (
+    CheckoutSessionResponse,
+    PortalSessionResponse,
+    SubscriptionRead,
+)
 from app.services.billing_service import (
     InvalidWebhookSignatureError,
+    NoStripeCustomerError,
     create_checkout_session,
+    create_portal_session,
     handle_webhook_event,
 )
 
@@ -19,13 +25,23 @@ def checkout(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CheckoutSessionResponse:
-    url = create_checkout_session(
-        db,
-        current_user,
-        success_url="http://localhost:3000/dashboard?checkout=success",
-        cancel_url="http://localhost:3000/dashboard?checkout=canceled",
-    )
+    url = create_checkout_session(db, current_user)
     return CheckoutSessionResponse(checkout_url=url)
+
+
+@router.post("/portal", response_model=PortalSessionResponse)
+def portal(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PortalSessionResponse:
+    try:
+        url = create_portal_session(db, current_user)
+    except NoStripeCustomerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No billing account yet — complete checkout first",
+        ) from exc
+    return PortalSessionResponse(portal_url=url)
 
 
 @router.get("/subscription", response_model=SubscriptionRead | None)

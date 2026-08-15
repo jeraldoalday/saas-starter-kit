@@ -18,6 +18,9 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000"
 
+    # Public base URL of the frontend, used to build Stripe redirect targets.
+    frontend_base_url: str = "http://localhost:3000"
+
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_price_id_monthly: str = ""

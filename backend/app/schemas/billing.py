@@ -8,6 +8,10 @@ class CheckoutSessionResponse(BaseModel):
     checkout_url: str
 
 
+class PortalSessionResponse(BaseModel):
+    portal_url: str
+
+
 class SubscriptionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

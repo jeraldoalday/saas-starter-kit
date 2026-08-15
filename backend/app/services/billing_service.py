@@ -15,6 +15,14 @@ class InvalidWebhookSignatureError(Exception):
     pass
 
 
+class NoStripeCustomerError(Exception):
+    """Raised when a billing action needs a Stripe customer the user doesn't have yet.
+
+    A customer only exists after the user completes checkout at least once, so
+    the portal is unreachable until then.
+    """
+
+
 def _get_or_create_subscription(db: Session, user: User) -> Subscription:
     if user.subscription is not None:
         return user.subscription
@@ -25,23 +33,50 @@ def _get_or_create_subscription(db: Session, user: User) -> Subscription:
     return subscription
 
 
-def create_checkout_session(db: Session, user: User, success_url: str, cancel_url: str) -> str:
+def create_checkout_session(
+    db: Session,
+    user: User,
+    success_url: str | None = None,
+    cancel_url: str | None = None,
+) -> str:
     """Create a Stripe Checkout session for the monthly plan and return its URL.
+
+    Redirect targets default to the configured frontend base URL, so the
+    backend doesn't hardcode where the app is deployed.
 
     Requires STRIPE_SECRET_KEY / STRIPE_PRICE_ID_MONTHLY to be configured; with
     placeholder test keys this will raise a stripe.error.AuthenticationError,
     which is expected until real Stripe credentials are wired in.
     """
     subscription = _get_or_create_subscription(db, user)
+    base = settings.frontend_base_url.rstrip("/")
 
     session = stripe.checkout.Session.create(
         mode="subscription",
         customer=subscription.stripe_customer_id,
         customer_email=user.email if not subscription.stripe_customer_id else None,
         line_items=[{"price": settings.stripe_price_id_monthly, "quantity": 1}],
-        success_url=success_url,
-        cancel_url=cancel_url,
+        success_url=success_url or f"{base}/dashboard?checkout=success",
+        cancel_url=cancel_url or f"{base}/dashboard?checkout=canceled",
         client_reference_id=str(user.id),
+    )
+    return session.url
+
+
+def create_portal_session(db: Session, user: User, return_url: str | None = None) -> str:
+    """Create a Stripe billing-portal session so the user can manage their plan.
+
+    The portal is where Stripe hosts payment-method updates, invoice history,
+    plan changes and cancellation, so none of that needs building here.
+    """
+    subscription = user.subscription
+    if subscription is None or not subscription.stripe_customer_id:
+        raise NoStripeCustomerError()
+
+    base = settings.frontend_base_url.rstrip("/")
+    session = stripe.billing_portal.Session.create(
+        customer=subscription.stripe_customer_id,
+        return_url=return_url or f"{base}/dashboard",
     )
     return session.url
 

@@ -9,7 +9,8 @@ dependencies = [
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "psycopg[binary]>=3.1",
-    "pydantic>=2.7",
+    # [email] pulls in email-validator, required by the EmailStr fields in app/schemas.
+    "pydantic[email]>=2.7",
     "pydantic-settings>=2.3",
     "python-jose[cryptography]>=3.3",
     "passlib[bcrypt]>=1.7",
