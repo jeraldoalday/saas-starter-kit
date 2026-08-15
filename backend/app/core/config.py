@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # Public base URL of the frontend, used to build Stripe redirect targets.
     frontend_base_url: str = "http://localhost:3000"
 
+    # Send HSTS. Enable only where TLS actually terminates in front of the app.
+    enable_hsts: bool = False
+
     log_level: str = "INFO"
     # JSON logs for log collectors in production; plain text is easier to read
     # while developing.
