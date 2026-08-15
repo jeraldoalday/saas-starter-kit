@@ -18,8 +18,8 @@ a spec.
 ## Day 3-5 — Real billing
 - [x] Stripe product/price catalog wired to real Stripe account
 - [x] Checkout session + customer portal flow
-- [ ] Webhook signature verification against live secret
-- [ ] Subscription state sync (past_due, canceled, trial)
+- [x] Webhook signature verification against live secret
+- [x] Subscription state sync (past_due, canceled, trial)
 
 ## Day 6-8 — Account lifecycle
 - [ ] Transactional email (verification, password reset) via provider

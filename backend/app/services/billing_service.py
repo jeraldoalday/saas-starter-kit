@@ -1,12 +1,17 @@
+import logging
+import uuid
 from datetime import UTC, datetime
 
 import stripe
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.user import User
+from app.models.webhook_event import ProcessedWebhookEvent
 
+logger = logging.getLogger("app.billing")
 settings = get_settings()
 stripe.api_key = settings.stripe_secret_key
 
@@ -82,27 +87,85 @@ def create_portal_session(db: Session, user: User, return_url: str | None = None
 
 
 def handle_webhook_event(db: Session, payload: bytes, sig_header: str) -> None:
+    """Verify a Stripe webhook's signature and apply it exactly once."""
+    if not settings.stripe_webhook_secret:
+        # Fail closed: without a secret every payload would be unverifiable,
+        # so an unauthenticated caller could drive subscription state.
+        logger.error("stripe webhook received but STRIPE_WEBHOOK_SECRET is unset")
+        raise InvalidWebhookSignatureError()
+
     try:
         event = stripe.Webhook.construct_event(
             payload, sig_header, settings.stripe_webhook_secret
         )
     except (ValueError, stripe.error.SignatureVerificationError) as exc:
+        logger.warning("stripe webhook signature rejected")
         raise InvalidWebhookSignatureError() from exc
+
+    event_id = event.get("id")
+    event_type = event.get("type", "")
+
+    if event_id and _already_processed(db, event_id):
+        logger.info(
+            "stripe webhook replay ignored",
+            extra={"stripe_event_id": event_id, "stripe_event_type": event_type},
+        )
+        return
 
     data = event["data"]["object"]
 
-    if event["type"] == "checkout.session.completed":
+    if event_type == "checkout.session.completed":
         _apply_checkout_completed(db, data)
-    elif event["type"] in ("customer.subscription.updated", "customer.subscription.deleted"):
-        _apply_subscription_update(db, data)
+    elif event_type in (
+        "customer.subscription.created",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+    ):
+        _apply_subscription_update(db, data, deleted=event_type.endswith(".deleted"))
+    elif event_type == "invoice.payment_failed":
+        _apply_payment_failed(db, data)
+    else:
+        logger.info(
+            "stripe webhook ignored", extra={"stripe_event_type": event_type}
+        )
+
+    if event_id:
+        _mark_processed(db, event_id, event_type)
+
+    logger.info(
+        "stripe webhook applied",
+        extra={"stripe_event_id": event_id, "stripe_event_type": event_type},
+    )
+
+
+def _already_processed(db: Session, event_id: str) -> bool:
+    return db.get(ProcessedWebhookEvent, event_id) is not None
+
+
+def _mark_processed(db: Session, event_id: str, event_type: str) -> None:
+    db.add(ProcessedWebhookEvent(id=event_id, event_type=event_type))
+    try:
+        db.commit()
+    except IntegrityError:
+        # Concurrent delivery of the same event; the other writer won.
+        db.rollback()
+
+
+def _subscription_for_user_id(db: Session, raw_user_id: str) -> Subscription | None:
+    try:
+        user_id = uuid.UUID(raw_user_id)
+    except (ValueError, AttributeError, TypeError):
+        logger.warning("stripe webhook carried an unparseable client_reference_id")
+        return None
+    return db.query(Subscription).filter(Subscription.user_id == user_id).first()
 
 
 def _apply_checkout_completed(db: Session, session_obj: dict) -> None:
-    user_id = session_obj.get("client_reference_id")
-    if not user_id:
+    raw_user_id = session_obj.get("client_reference_id")
+    if not raw_user_id:
         return
 
-    subscription = db.query(Subscription).filter(Subscription.user_id == user_id).first()
+    subscription = _subscription_for_user_id(db, raw_user_id)
     if subscription is None:
         return
 
@@ -112,7 +175,9 @@ def _apply_checkout_completed(db: Session, session_obj: dict) -> None:
     db.commit()
 
 
-def _apply_subscription_update(db: Session, subscription_obj: dict) -> None:
+def _apply_subscription_update(
+    db: Session, subscription_obj: dict, deleted: bool = False
+) -> None:
     stripe_subscription_id = subscription_obj.get("id")
     subscription = (
         db.query(Subscription)
@@ -122,8 +187,31 @@ def _apply_subscription_update(db: Session, subscription_obj: dict) -> None:
     if subscription is None:
         return
 
-    subscription.status = subscription_obj.get("status", subscription.status)
+    if deleted:
+        # A deletion event can still carry status="active" for the final
+        # period, so the terminal state is set explicitly rather than copied.
+        subscription.status = SubscriptionStatus.CANCELED.value
+    else:
+        subscription.status = subscription_obj.get("status", subscription.status)
+
     period_end = subscription_obj.get("current_period_end")
     if period_end:
         subscription.current_period_end = datetime.fromtimestamp(period_end, tz=UTC)
+    db.commit()
+
+
+def _apply_payment_failed(db: Session, invoice_obj: dict) -> None:
+    stripe_subscription_id = invoice_obj.get("subscription")
+    if not stripe_subscription_id:
+        return
+
+    subscription = (
+        db.query(Subscription)
+        .filter(Subscription.stripe_subscription_id == stripe_subscription_id)
+        .first()
+    )
+    if subscription is None:
+        return
+
+    subscription.status = SubscriptionStatus.PAST_DUE.value
     db.commit()
