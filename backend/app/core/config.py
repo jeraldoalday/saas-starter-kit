@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     # Public base URL of the frontend, used to build Stripe redirect targets.
     frontend_base_url: str = "http://localhost:3000"
 
+    log_level: str = "INFO"
+    # JSON logs for log collectors in production; plain text is easier to read
+    # while developing.
+    log_json: bool = True
+
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_price_id_monthly: str = ""

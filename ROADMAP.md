@@ -34,7 +34,7 @@ a spec.
 - [ ] Secrets management review (no plaintext secrets in repo/CI)
 
 ## Day 11-12 — Observability & ops
-- [ ] Structured logging (backend + frontend)
+- [x] Structured logging (backend + frontend)
 - [ ] Error tracking (Sentry or equivalent)
 - [ ] Health/readiness probes for orchestration
 - [ ] Basic usage metrics/analytics hook
