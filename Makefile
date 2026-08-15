@@ -1,4 +1,4 @@
-.PHONY: dev-backend dev-frontend test test-backend test-frontend lint migrate up down
+.PHONY: dev-backend dev-frontend test test-backend test-frontend lint migrate up down sync-stripe-catalog
 
 dev-backend:
 	cd backend && uvicorn app.main:app --reload
@@ -20,6 +20,9 @@ lint:
 
 migrate:
 	cd backend && alembic upgrade head
+
+sync-stripe-catalog:
+	cd backend && python -m app.scripts.sync_stripe_catalog
 
 up:
 	docker compose up --build

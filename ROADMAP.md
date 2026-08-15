@@ -16,7 +16,7 @@ a spec.
 - [x] Docker Compose for local dev
 
 ## Day 3-5 — Real billing
-- [ ] Stripe product/price catalog wired to real Stripe account
+- [x] Stripe product/price catalog wired to real Stripe account
 - [ ] Checkout session + customer portal flow
 - [ ] Webhook signature verification against live secret
 - [ ] Subscription state sync (past_due, canceled, trial)

@@ -91,6 +91,20 @@ make test-frontend
 All configuration is via environment variables — see `.env.example` for the
 full list (database URL, JWT secret, Stripe keys, CORS origins).
 
+### Stripe product/price catalog
+
+Plans are defined in code (`backend/app/core/billing_plans.py`) instead of
+being clicked together in the Stripe dashboard. With a real `STRIPE_SECRET_KEY`
+set, sync them to that Stripe account:
+
+```bash
+make sync-stripe-catalog
+```
+
+This creates each plan's Product/Price if missing, or reuses the existing one
+(matched by `lookup_key`), and prints the resulting price IDs to set as
+`STRIPE_PRICE_ID_MONTHLY`. Safe to re-run.
+
 ## Roadmap to PRD-ready
 
 This scaffold covers the foundation: auth, a data layer, a billing hook,
