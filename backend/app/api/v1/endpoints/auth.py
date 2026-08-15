@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps_rate_limit import login_rate_limit, register_rate_limit
 from app.core.security import TokenType, create_access_token, decode_token
 from app.database import get_db
 from app.models.user import User
@@ -19,7 +20,12 @@ from app.services.auth_service import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(register_rate_limit)],
+)
 def register(data: UserCreate, db: Session = Depends(get_db)) -> UserRead:
     try:
         user = register_user(db, data)
@@ -30,7 +36,9 @@ def register(data: UserCreate, db: Session = Depends(get_db)) -> UserRead:
     return user
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post(
+    "/login", response_model=TokenPair, dependencies=[Depends(login_rate_limit)]
+)
 def login(data: LoginRequest, db: Session = Depends(get_db)) -> TokenPair:
     try:
         user = authenticate_user(db, data.email, data.password)

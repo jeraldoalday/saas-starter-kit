@@ -29,7 +29,7 @@ a spec.
 
 ## Day 9-10 — Access control & hardening
 - [ ] Role-based access control (owner/admin/member)
-- [ ] Rate limiting on auth endpoints
+- [x] Rate limiting on auth endpoints
 - [x] Input validation audit + security headers
 - [ ] Secrets management review (no plaintext secrets in repo/CI)
 

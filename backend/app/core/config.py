@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # Send HSTS. Enable only where TLS actually terminates in front of the app.
     enable_hsts: bool = False
 
+    rate_limit_enabled: bool = True
+    # Only enable behind a proxy that overwrites X-Forwarded-For; otherwise a
+    # client can spoof the header and sidestep per-IP limits.
+    trust_proxy_headers: bool = False
+
     log_level: str = "INFO"
     # JSON logs for log collectors in production; plain text is easier to read
     # while developing.

@@ -4,6 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.rate_limit import rate_limiter
 from app.database import Base, get_db
 from app.main import app
 
@@ -20,6 +21,15 @@ def _reset_db():
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Counters are process-global, so one test's requests would otherwise
+    count against the next test's budget."""
+    rate_limiter.reset()
+    yield
+    rate_limiter.reset()
 
 
 @pytest.fixture
