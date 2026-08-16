@@ -31,7 +31,7 @@ a spec.
 - [x] Role-based access control (owner/admin/member)
 - [x] Rate limiting on auth endpoints
 - [x] Input validation audit + security headers
-- [ ] Secrets management review (no plaintext secrets in repo/CI)
+- [x] Secrets management review (no plaintext secrets in repo/CI)
 
 ## Day 11-12 — Observability & ops
 - [x] Structured logging (backend + frontend)

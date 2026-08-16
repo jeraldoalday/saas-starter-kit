@@ -1,0 +1,19 @@
+title = "gitleaks config"
+
+# Start from gitleaks' built-in rule set (AWS keys, private keys, generic
+# high-entropy secrets, provider-specific token formats, ...) and only
+# allowlist the placeholders this repo checks in on purpose.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholder values meant to be committed (see .env.example)"
+paths = [
+  '''(^|/)\.env\.example$''',
+]
+regexes = [
+  '''change-me-to-a-random-64-char-string''',
+  '''sk_test_placeholder''',
+  '''whsec_placeholder''',
+  '''price_placeholder''',
+]
