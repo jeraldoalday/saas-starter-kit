@@ -114,6 +114,23 @@ full list (database URL, JWT secret, Stripe keys, CORS origins).
   mistake; `.gitleaks.toml` allowlists only the known-safe placeholders in
   `.env.example`.
 
+### Error tracking
+
+Both services report uncaught exceptions to [Sentry](https://sentry.io) via
+`sentry-sdk` (backend) and `@sentry/nextjs` (frontend) — set `SENTRY_DSN` and
+`NEXT_PUBLIC_SENTRY_DSN` to enable. Leaving either unset (the default) is a
+no-op: the app boots and runs the same way with no Sentry project required.
+
+- Backend: `backend/app/core/error_tracking.py`, wired in on startup in
+  `backend/app/main.py`. `SENTRY_TRACES_SAMPLE_RATE` controls what fraction
+  of requests get performance traces (default `0`); errors are always
+  captured regardless.
+- Frontend: `frontend/src/lib/error-tracking.ts`, initialized from
+  `frontend/src/instrumentation-client.ts` (browser) and
+  `frontend/src/instrumentation.ts` (server/edge), with
+  `frontend/src/app/global-error.tsx` reporting render errors that escape
+  the root layout.
+
 ### Stripe product/price catalog
 
 Plans are defined in code (`backend/app/core/billing_plans.py`) instead of

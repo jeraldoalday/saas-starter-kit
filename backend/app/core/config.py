@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_price_id_monthly: str = ""
 
+    # Empty disables error tracking entirely (the default for local dev).
+    sentry_dsn: str = ""
+    # Fraction (0.0-1.0) of requests to sample for performance tracing.
+    # Errors are captured regardless of this setting.
+    sentry_traces_sample_rate: float = 0.0
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

@@ -35,7 +35,7 @@ a spec.
 
 ## Day 11-12 — Observability & ops
 - [x] Structured logging (backend + frontend)
-- [ ] Error tracking (Sentry or equivalent)
+- [x] Error tracking (Sentry or equivalent)
 - [x] Health/readiness probes for orchestration
 - [ ] Basic usage metrics/analytics hook
 

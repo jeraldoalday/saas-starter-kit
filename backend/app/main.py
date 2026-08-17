@@ -3,12 +3,18 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.error_tracking import configure_error_tracking
 from app.core.logging import configure_logging
 from app.middleware.request_id import RequestIdMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 
 settings = get_settings()
 configure_logging(level=settings.log_level, json_output=settings.log_json)
+configure_error_tracking(
+    dsn=settings.sentry_dsn,
+    environment=settings.environment,
+    traces_sample_rate=settings.sentry_traces_sample_rate,
+)
 
 app = FastAPI(
     title="SaaS Starter API",
