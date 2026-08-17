@@ -5,23 +5,22 @@ const sentryMock = vi.hoisted(() => ({
   captureException: vi.fn(),
 }));
 
-vi.mock("@sentry/nextjs", () => sentryMock);
+vi.mock("@sentry/react", () => sentryMock);
 
 import { initErrorTracking, reportError } from "@/lib/error-tracking";
 
+beforeEach(() => {
+  sentryMock.init.mockClear();
+  sentryMock.captureException.mockClear();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("initErrorTracking", () => {
-  const originalDsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
-
-  beforeEach(() => {
-    sentryMock.init.mockClear();
-  });
-
-  afterEach(() => {
-    process.env.NEXT_PUBLIC_SENTRY_DSN = originalDsn;
-  });
-
   it("does not initialize Sentry when no DSN is configured", () => {
-    delete process.env.NEXT_PUBLIC_SENTRY_DSN;
+    vi.stubEnv("VITE_SENTRY_DSN", "");
 
     initErrorTracking();
 
@@ -29,19 +28,29 @@ describe("initErrorTracking", () => {
   });
 
   it("initializes Sentry with the configured DSN", () => {
-    process.env.NEXT_PUBLIC_SENTRY_DSN = "https://public@sentry.example.com/1";
+    vi.stubEnv("VITE_SENTRY_DSN", "https://public@sentry.example.com/1");
 
     initErrorTracking();
 
     expect(sentryMock.init).toHaveBeenCalledWith(
-      expect.objectContaining({ dsn: "https://public@sentry.example.com/1" }),
+      expect.objectContaining({ dsn: "https://public@sentry.example.com/1" })
+    );
+  });
+
+  it("prefers an explicit environment over the build mode", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://public@sentry.example.com/1");
+    vi.stubEnv("VITE_SENTRY_ENVIRONMENT", "staging");
+
+    initErrorTracking();
+
+    expect(sentryMock.init).toHaveBeenCalledWith(
+      expect.objectContaining({ environment: "staging" })
     );
   });
 });
 
 describe("reportError", () => {
   it("forwards the error to Sentry", () => {
-    sentryMock.captureException.mockClear();
     const error = new Error("boom");
 
     reportError(error);

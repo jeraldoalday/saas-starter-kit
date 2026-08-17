@@ -1,20 +1,16 @@
-import * as Sentry from "@sentry/nextjs";
+import * as Sentry from "@sentry/react";
 
-// The DSN identifies which Sentry project events land in, not a secret key,
-// so it's fine to ship under NEXT_PUBLIC_* and reuse for both the browser
-// and the server/edge runtimes (see instrumentation-client.ts and
-// instrumentation.ts). Leaving it unset - the default for local dev - means
-// `Sentry.init` is never called and no Sentry project is required to run.
-const SENTRY_ENVIRONMENT =
-  process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development";
-
+// The DSN identifies which Sentry project events land in, not a secret key, so
+// it's fine to ship in the client bundle under VITE_*. Leaving it unset - the
+// default for local dev - means `Sentry.init` is never called and no Sentry
+// project is required to run.
 export function initErrorTracking(): void {
-  const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+  const dsn = import.meta.env.VITE_SENTRY_DSN;
   if (!dsn) return;
 
   Sentry.init({
     dsn,
-    environment: SENTRY_ENVIRONMENT,
+    environment: import.meta.env.VITE_SENTRY_ENVIRONMENT ?? import.meta.env.MODE,
     tracesSampleRate: 0,
   });
 }

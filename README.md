@@ -127,19 +127,19 @@ secret behind a `VITE_` prefix; anything with that prefix ships to the client.
 ### Error tracking
 
 Both services report uncaught exceptions to [Sentry](https://sentry.io) via
-`sentry-sdk` (backend) and `@sentry/nextjs` (frontend) — set `SENTRY_DSN` and
-`NEXT_PUBLIC_SENTRY_DSN` to enable. Leaving either unset (the default) is a
+`sentry-sdk` (backend) and `@sentry/react` (frontend) — set `SENTRY_DSN` and
+`VITE_SENTRY_DSN` to enable. Leaving either unset (the default) is a
 no-op: the app boots and runs the same way with no Sentry project required.
 
 - Backend: `backend/app/core/error_tracking.py`, wired in on startup in
   `backend/app/main.py`. `SENTRY_TRACES_SAMPLE_RATE` controls what fraction
   of requests get performance traces (default `0`); errors are always
   captured regardless.
-- Frontend: `frontend/src/lib/error-tracking.ts`, initialized from
-  `frontend/src/instrumentation-client.ts` (browser) and
-  `frontend/src/instrumentation.ts` (server/edge), with
-  `frontend/src/app/global-error.tsx` reporting render errors that escape
-  the root layout.
+- Frontend: `frontend/src/lib/error-tracking.ts`, initialized in
+  `frontend/src/main.tsx` before the first render, with
+  `frontend/src/components/ErrorBoundary.tsx` mounted around the router to
+  report render errors that escape the route tree. `VITE_SENTRY_ENVIRONMENT`
+  overrides the environment tag, which otherwise follows the Vite build mode.
 
 ### Stripe product/price catalog
 
