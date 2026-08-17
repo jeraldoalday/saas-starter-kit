@@ -106,6 +106,12 @@ Vite **inlines them at build time** — changing `VITE_API_BASE_URL` means
 rebuilding the frontend image, not just restarting the container. Never put a
 secret behind a `VITE_` prefix; anything with that prefix ships to the client.
 
+Because that inlining happens at build time, every `VITE_` var also has to be
+declared as an `ARG` in `frontend/Dockerfile` and forwarded from
+`docker-compose.yml`. A var that only exists in `.env` will reach `npm run dev`
+but is silently missing from a container build — the build still succeeds, the
+value is just `undefined` at runtime.
+
 ### Secrets management
 
 - Real secrets live only in `.env` (git-ignored) or your deploy platform's

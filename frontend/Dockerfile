@@ -4,6 +4,13 @@ WORKDIR /app
 # here rather than read from the container environment at runtime.
 ARG VITE_API_BASE_URL=http://localhost:8000/api/v1
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+# Empty by default, which is what keeps Sentry.init from running. Every VITE_
+# var the app reads has to be declared here, or it is silently absent from the
+# bundle rather than failing the build.
+ARG VITE_SENTRY_DSN=
+ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
+ARG VITE_SENTRY_ENVIRONMENT=
+ENV VITE_SENTRY_ENVIRONMENT=$VITE_SENTRY_ENVIRONMENT
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
