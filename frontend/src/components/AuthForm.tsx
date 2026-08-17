@@ -1,7 +1,5 @@
-"use client";
-
-import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -14,7 +12,7 @@ interface AuthFormProps {
 }
 
 export function AuthForm({ mode }: AuthFormProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -33,7 +31,7 @@ export function AuthForm({ mode }: AuthFormProps) {
       } else {
         await login(email, password);
       }
-      router.push("/dashboard");
+      navigate("/dashboard");
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Something went wrong");
     } finally {

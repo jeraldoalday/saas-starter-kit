@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useState } from "react";
 
 import { getAccessToken, fetchCurrentUser, logout as logoutRequest } from "@/lib/auth";

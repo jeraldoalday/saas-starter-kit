@@ -1,7 +1,5 @@
-"use client";
-
-import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/Button";
 import type { User } from "@/lib/types";
@@ -13,11 +11,11 @@ interface DashboardShellProps {
 }
 
 export function DashboardShell({ user, onLogout, children }: DashboardShellProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
 
   function handleLogout() {
     onLogout();
-    router.push("/login");
+    navigate("/login");
   }
 
   return (
