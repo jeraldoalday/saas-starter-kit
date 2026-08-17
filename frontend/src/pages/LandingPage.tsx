@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -18,7 +18,7 @@ const features = [
   },
 ];
 
-export default function LandingPage() {
+export function LandingPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center gap-12 px-6 py-24 text-center">
       <div className="flex flex-col gap-4">
@@ -26,15 +26,15 @@ export default function LandingPage() {
           Ship your SaaS, not your boilerplate
         </h1>
         <p className="text-lg text-neutral-400">
-          A FastAPI + Next.js starter kit with auth, billing, and CI already wired up.
+          A FastAPI + React starter kit with auth, billing, and CI already wired up.
         </p>
       </div>
 
       <div className="flex gap-3">
-        <Link href="/register">
+        <Link to="/register">
           <Button>Get started</Button>
         </Link>
-        <Link href="/login">
+        <Link to="/login">
           <Button variant="secondary">Log in</Button>
         </Link>
       </div>
