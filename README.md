@@ -1,8 +1,8 @@
 # SaaS Starter Kit
 
 A production-lean scaffold for a subscription SaaS product: a **FastAPI**
-backend (Python) and a **Next.js** frontend (Node.js/TypeScript), wired up
-with authentication, a billing hook, a database layer, tests, and CI.
+backend (Python) and a **React** single-page frontend (Vite/TypeScript), wired
+up with authentication, a billing hook, a database layer, tests, and CI.
 
 This is a starting point meant to be sold or licensed as a boilerplate —
 it deliberately ships only what a real SaaS needs on day one, so the buyer
@@ -13,10 +13,10 @@ isn't paying for dead weight.
 | Layer     | Tech                                                   |
 |-----------|---------------------------------------------------------|
 | Backend   | Python 3.11+, FastAPI, SQLAlchemy 2.0, Alembic, Postgres |
-| Frontend  | Node.js 20+, Next.js (App Router), TypeScript, Tailwind |
+| Frontend  | Node.js 20+, React 19 + Vite, React Router, TypeScript, Tailwind |
 | Auth      | JWT access/refresh tokens, bcrypt password hashing       |
 | Billing   | Stripe webhook + subscription model (stubbed, wired up)  |
-| Infra     | Docker Compose (Postgres + backend + frontend)           |
+| Infra     | Docker Compose (Postgres + backend + nginx-served frontend) |
 | CI        | GitHub Actions (lint + test, backend and frontend)        |
 
 ## Project layout
@@ -32,12 +32,17 @@ isn't paying for dead weight.
 │   │   └── services/    business logic (auth, billing)
 │   ├── migrations/      Alembic migrations
 │   └── tests/           pytest suite
-├── frontend/           Next.js app
+├── frontend/           React SPA (Vite)
+│   ├── index.html       Vite entry document
+│   ├── nginx.conf       SPA fallback + cache headers for the production image
 │   └── src/
-│       ├── app/          routes: landing, (auth) login/register, dashboard
-│       ├── components/   UI primitives + feature components
+│       ├── main.tsx      mounts React and BrowserRouter
+│       ├── App.tsx       route table
+│       ├── pages/        Landing, Login, Register, Dashboard
+│       ├── components/   UI primitives + feature components + ProtectedRoute
 │       ├── lib/          API client, auth helpers, types
-│       └── hooks/        client hooks (useAuth)
+│       ├── hooks/        client hooks (useAuth)
+│       └── styles/       Tailwind entry + design tokens
 └── .github/workflows/  CI for backend + frontend
 ```
 
@@ -95,6 +100,11 @@ make test-frontend
 
 All configuration is via environment variables — see `.env.example` for the
 full list (database URL, JWT secret, Stripe keys, CORS origins).
+
+Frontend variables must be prefixed `VITE_` to reach the browser bundle, and
+Vite **inlines them at build time** — changing `VITE_API_BASE_URL` means
+rebuilding the frontend image, not just restarting the container. Never put a
+secret behind a `VITE_` prefix; anything with that prefix ships to the client.
 
 ### Stripe product/price catalog
 
