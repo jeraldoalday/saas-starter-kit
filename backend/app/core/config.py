@@ -1,6 +1,19 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Placeholder values shipped in .env.example. Fine for local dev (where they
+# make the app boot with zero config), but if any of these are still in
+# place once ENVIRONMENT=production, secrets were never actually set for the
+# deployment and the app is running on values anyone can read in this repo.
+_INSECURE_DEFAULTS = {
+    "secret_key": "change-me-to-a-random-64-char-string",
+    "stripe_secret_key": "sk_test_placeholder",
+    "stripe_webhook_secret": "whsec_placeholder",
+    "stripe_price_id_monthly": "price_placeholder",
+}
+MIN_SECRET_KEY_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -52,9 +65,40 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_price_id_monthly: str = ""
 
+    # Empty disables error tracking entirely (the default for local dev).
+    sentry_dsn: str = ""
+    # Fraction (0.0-1.0) of requests to sample for performance tracing.
+    # Errors are captured regardless of this setting.
+    sentry_traces_sample_rate: float = 0.0
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @model_validator(mode="after")
+    def _forbid_insecure_production_config(self) -> "Settings":
+        if self.environment != "production":
+            return self
+
+        problems = [
+            f"{field} is still set to its .env.example placeholder value"
+            for field, placeholder in _INSECURE_DEFAULTS.items()
+            if getattr(self, field) == placeholder
+        ]
+        if len(self.secret_key) < MIN_SECRET_KEY_LENGTH:
+            problems.append(
+                f"secret_key is only {len(self.secret_key)} chars "
+                f"(minimum {MIN_SECRET_KEY_LENGTH})"
+            )
+        if self.debug:
+            problems.append("debug is enabled")
+
+        if problems:
+            raise ValueError(
+                "Refusing to start with ENVIRONMENT=production and insecure config: "
+                + "; ".join(problems)
+            )
+        return self
 
 
 @lru_cache

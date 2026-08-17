@@ -106,6 +106,41 @@ Vite **inlines them at build time** — changing `VITE_API_BASE_URL` means
 rebuilding the frontend image, not just restarting the container. Never put a
 secret behind a `VITE_` prefix; anything with that prefix ships to the client.
 
+### Secrets management
+
+- Real secrets live only in `.env` (git-ignored) or your deploy platform's
+  secret store — never in tracked files. `.env.example` ships placeholder
+  values only, so `cp .env.example .env` gives you a working local setup
+  with nothing sensitive in it.
+- `Settings` (`backend/app/core/config.py`) refuses to start when
+  `ENVIRONMENT=production` and `SECRET_KEY`, `STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, or `STRIPE_PRICE_ID_MONTHLY` are still set to
+  their `.env.example` placeholder, `SECRET_KEY` is under 32 characters, or
+  `DEBUG` is left on — a deploy with unset or copy-pasted-placeholder
+  secrets fails fast at boot instead of running with a forgeable JWT
+  signing key or a wide-open webhook endpoint.
+- CI runs [gitleaks](https://github.com/gitleaks/gitleaks) on every push and
+  PR (`.github/workflows/secret-scan.yml`) to catch any secret committed by
+  mistake; `.gitleaks.toml` allowlists only the known-safe placeholders in
+  `.env.example`.
+
+### Error tracking
+
+Both services report uncaught exceptions to [Sentry](https://sentry.io) via
+`sentry-sdk` (backend) and `@sentry/nextjs` (frontend) — set `SENTRY_DSN` and
+`NEXT_PUBLIC_SENTRY_DSN` to enable. Leaving either unset (the default) is a
+no-op: the app boots and runs the same way with no Sentry project required.
+
+- Backend: `backend/app/core/error_tracking.py`, wired in on startup in
+  `backend/app/main.py`. `SENTRY_TRACES_SAMPLE_RATE` controls what fraction
+  of requests get performance traces (default `0`); errors are always
+  captured regardless.
+- Frontend: `frontend/src/lib/error-tracking.ts`, initialized from
+  `frontend/src/instrumentation-client.ts` (browser) and
+  `frontend/src/instrumentation.ts` (server/edge), with
+  `frontend/src/app/global-error.tsx` reporting render errors that escape
+  the root layout.
+
 ### Stripe product/price catalog
 
 Plans are defined in code (`backend/app/core/billing_plans.py`) instead of
