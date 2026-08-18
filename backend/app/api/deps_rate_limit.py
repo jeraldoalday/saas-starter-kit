@@ -54,3 +54,7 @@ class RateLimit:
 login_rate_limit = RateLimit(limit=10, window_seconds=60)
 register_rate_limit = RateLimit(limit=5, window_seconds=60)
 password_reset_rate_limit = RateLimit(limit=5, window_seconds=300)
+# Ingest is authenticated and cheap, so the limit is generous: it exists to
+# stop a looping client from filling the events table, not to ration normal
+# use. A page load flushes one batch, not one request per event.
+analytics_ingest_rate_limit = RateLimit(limit=60, window_seconds=60)
