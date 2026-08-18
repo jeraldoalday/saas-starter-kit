@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { flushEvents, resetAnalytics } from "@/lib/analytics";
 import { getAccessToken, fetchCurrentUser, logout as logoutRequest } from "@/lib/auth";
 import type { User } from "@/lib/types";
 
@@ -36,6 +37,12 @@ export function useAuth(): UseAuthResult {
   }, [refresh]);
 
   const logout = useCallback(() => {
+    // Flush before the token goes: ingest is authenticated, so anything
+    // still buffered afterwards could never be sent. resetAnalytics then
+    // clears whatever the flush didn't take, so this session's events can't
+    // be attributed to whoever logs in next on this browser.
+    void flushEvents();
+    resetAnalytics();
     logoutRequest();
     setUser(null);
   }, []);
