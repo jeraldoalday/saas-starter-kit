@@ -1,4 +1,4 @@
-.PHONY: dev-backend dev-frontend test test-backend test-frontend lint migrate up down sync-stripe-catalog
+.PHONY: dev-backend dev-frontend test test-backend test-frontend lint migrate up down sync-stripe-catalog prune-usage-events
 
 dev-backend:
 	cd backend && uvicorn app.main:app --reload
@@ -23,6 +23,9 @@ migrate:
 
 sync-stripe-catalog:
 	cd backend && python -m app.scripts.sync_stripe_catalog
+
+prune-usage-events:
+	cd backend && python -m app.scripts.prune_usage_events
 
 up:
 	docker compose up --build

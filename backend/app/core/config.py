@@ -65,6 +65,16 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_price_id_monthly: str = ""
 
+    # Product usage events. Off switches recording only: the summary
+    # endpoints still answer, they just report the history already stored.
+    analytics_enabled: bool = True
+    # How long recorded events are kept. The table is append-only, so a
+    # scheduled prune (app/scripts/prune_usage_events.py) is what keeps it
+    # from growing forever.
+    analytics_retention_days: int = 400
+    # Ceiling on how many events one batched ingest call may carry.
+    analytics_max_batch_size: int = 50
+
     # Empty disables error tracking entirely (the default for local dev).
     sentry_dsn: str = ""
     # Fraction (0.0-1.0) of requests to sample for performance tracing.
