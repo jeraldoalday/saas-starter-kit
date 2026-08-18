@@ -154,3 +154,57 @@ def test_password_reset_lookup_is_case_insensitive(client, outbox):
     client.post("/api/v1/auth/forgot-password", json={"email": "ADA@EXAMPLE.COM"})
 
     assert outbox.last_to("ada@example.com") is not None
+
+
+def test_deactivated_account_cannot_log_in(client, db_session):
+    from app.models.user import User
+
+    _register(client, email="off@example.com", password="s3cret-password")
+    user = db_session.query(User).filter(User.email == "off@example.com").one()
+    user.is_active = False
+    db_session.commit()
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "off@example.com", "password": "s3cret-password"},
+    )
+
+    assert response.status_code == 403
+    assert "deactivated" in response.json()["detail"].lower()
+
+
+def test_deactivated_account_gets_no_tokens(client, db_session):
+    """A refresh token would outlive the deactivation by days."""
+    from app.models.user import User
+
+    _register(client, email="off2@example.com", password="s3cret-password")
+    user = db_session.query(User).filter(User.email == "off2@example.com").one()
+    user.is_active = False
+    db_session.commit()
+
+    body = client.post(
+        "/api/v1/auth/login",
+        json={"email": "off2@example.com", "password": "s3cret-password"},
+    ).json()
+
+    assert "access_token" not in body
+    assert "refresh_token" not in body
+
+
+def test_wrong_password_on_a_deactivated_account_still_reads_as_wrong_password(
+    client, db_session
+):
+    """Deactivation must not become an oracle for guessing passwords."""
+    from app.models.user import User
+
+    _register(client, email="off3@example.com", password="s3cret-password")
+    user = db_session.query(User).filter(User.email == "off3@example.com").one()
+    user.is_active = False
+    db_session.commit()
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "off3@example.com", "password": "wrong-password"},
+    )
+
+    assert response.status_code == 401

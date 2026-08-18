@@ -26,6 +26,7 @@ from app.schemas.user import UserCreate, UserRead
 from app.services.analytics_service import record_event
 from app.services.auth_service import (
     EmailAlreadyRegisteredError,
+    InactiveAccountError,
     InvalidCredentialsError,
     authenticate_user,
     issue_token_pair,
@@ -126,6 +127,14 @@ def login(data: LoginRequest, db: Session = Depends(get_db)) -> TokenPair:
     except InvalidCredentialsError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password"
+        ) from exc
+    except InactiveAccountError as exc:
+        # Distinct from a bad password: the caller proved who they are, and
+        # telling them the account is disabled is what lets them ask an
+        # admin to re-enable it instead of resetting a working password.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account has been deactivated",
         ) from exc
 
     # Only successful logins are recorded. Failures are a security signal,

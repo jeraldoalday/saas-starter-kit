@@ -19,6 +19,10 @@ class InvalidCredentialsError(Exception):
     pass
 
 
+class InactiveAccountError(Exception):
+    """The credentials were right, but the account is switched off."""
+
+
 def register_user(db: Session, data: UserCreate) -> User:
     existing = db.query(User).filter(User.email == data.email).first()
     if existing is not None:
@@ -36,9 +40,20 @@ def register_user(db: Session, data: UserCreate) -> User:
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User:
+    """Verify credentials, or raise.
+
+    Deactivation is checked here and not only in get_current_user: issuing a
+    token pair for a switched-off account hands out a refresh token that
+    outlives the deactivation by up to REFRESH_TOKEN_EXPIRE_DAYS, and every
+    other entry point already refuses inactive users.
+    """
     user = db.query(User).filter(User.email == email).first()
     if user is None or not verify_password(password, user.hashed_password):
         raise InvalidCredentialsError()
+
+    if not user.is_active:
+        raise InactiveAccountError()
+
     return user
 
 
