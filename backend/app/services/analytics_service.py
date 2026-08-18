@@ -11,6 +11,7 @@ Two rules shape this module:
 """
 
 import logging
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -74,6 +75,7 @@ def record_event(
     name: str | EventName,
     *,
     user: User | None = None,
+    user_id: uuid.UUID | None = None,
     source: EventSource | str = EventSource.BACKEND,
     properties: dict | None = None,
     occurred_at: datetime | None = None,
@@ -84,12 +86,16 @@ def record_event(
     Dropped means either analytics is switched off for this deployment or
     the insert failed; callers treat both the same way, because neither is
     something the caller can act on.
+
+    Pass `user` when the caller already holds the row, `user_id` when it
+    only has the id — webhook handlers work from a subscription and would
+    otherwise load a user purely to record an event.
     """
     if not get_settings().analytics_enabled:
         return None
 
     event = UsageEvent(
-        user_id=user.id if user is not None else None,
+        user_id=user.id if user is not None else user_id,
         name=str(name),
         source=str(source),
         properties=properties or {},

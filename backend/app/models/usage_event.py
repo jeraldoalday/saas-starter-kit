@@ -25,11 +25,12 @@ class EventName(StrEnum):
     USER_REGISTERED = "user.registered"
     USER_LOGGED_IN = "user.logged_in"
     USER_VERIFIED = "user.verified"
-    USER_DELETED = "user.deleted"
     CHECKOUT_STARTED = "billing.checkout_started"
     PORTAL_OPENED = "billing.portal_opened"
     SUBSCRIPTION_ACTIVATED = "billing.subscription_activated"
     SUBSCRIPTION_CANCELED = "billing.subscription_canceled"
+    SUBSCRIPTION_PAST_DUE = "billing.subscription_past_due"
+    ACCOUNT_DELETED = "account.deleted"
 
 
 class EventSource(StrEnum):

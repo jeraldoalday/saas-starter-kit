@@ -11,6 +11,7 @@ from app.api.deps_rate_limit import (
 from app.core.security import TokenType, create_access_token, decode_token
 from app.database import get_db
 from app.deps import get_current_user
+from app.models.usage_event import EventName
 from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
@@ -22,6 +23,7 @@ from app.schemas.auth import (
     VerifyEmailRequest,
 )
 from app.schemas.user import UserCreate, UserRead
+from app.services.analytics_service import record_event
 from app.services.auth_service import (
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
@@ -50,6 +52,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)) -> UserRead:
         ) from exc
 
     send_verification_email(db, user)
+    record_event(db, EventName.USER_REGISTERED, user=user)
     return user
 
 
@@ -96,6 +99,7 @@ def verify_email_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Verification link is invalid or has expired",
         )
+    record_event(db, EventName.USER_VERIFIED, user=user)
     return MessageResponse(detail="Email verified")
 
 
@@ -123,6 +127,10 @@ def login(data: LoginRequest, db: Session = Depends(get_db)) -> TokenPair:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password"
         ) from exc
+
+    # Only successful logins are recorded. Failures are a security signal,
+    # not a product one, and they already go to the rate limiter and the log.
+    record_event(db, EventName.USER_LOGGED_IN, user=user)
     return issue_token_pair(user)
 
 

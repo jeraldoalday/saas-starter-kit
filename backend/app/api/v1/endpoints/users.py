@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user
+from app.models.usage_event import EventName
 from app.models.user import User
 from app.schemas.user import DeleteAccountRequest, UserRead
 from app.services.account_service import (
@@ -13,6 +14,7 @@ from app.services.account_service import (
     export_user_data,
     has_active_subscription,
 )
+from app.services.analytics_service import record_event
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -50,3 +52,9 @@ def delete_my_account(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Password is incorrect"
         ) from exc
+
+    # Deliberately anonymous: the account's own events were just cascaded
+    # away with it, and attaching this one to the deleted id would either
+    # fail the foreign key or resurrect a record of someone who asked to be
+    # forgotten. Churn is still countable without knowing who churned.
+    record_event(db, EventName.ACCOUNT_DELETED)

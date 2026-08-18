@@ -3,12 +3,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user, get_verified_user
+from app.models.usage_event import EventName
 from app.models.user import User
 from app.schemas.billing import (
     CheckoutSessionResponse,
     PortalSessionResponse,
     SubscriptionRead,
 )
+from app.services.analytics_service import record_event
 from app.services.billing_service import (
     InvalidWebhookSignatureError,
     NoStripeCustomerError,
@@ -26,6 +28,9 @@ def checkout(
     db: Session = Depends(get_db),
 ) -> CheckoutSessionResponse:
     url = create_checkout_session(db, current_user)
+    # Recorded after Stripe accepted the session, so the funnel counts
+    # intents that actually reached checkout rather than failed attempts.
+    record_event(db, EventName.CHECKOUT_STARTED, user=current_user)
     return CheckoutSessionResponse(checkout_url=url)
 
 
@@ -41,6 +46,8 @@ def portal(
             status_code=status.HTTP_409_CONFLICT,
             detail="No billing account yet — complete checkout first",
         ) from exc
+
+    record_event(db, EventName.PORTAL_OPENED, user=current_user)
     return PortalSessionResponse(portal_url=url)
 
 

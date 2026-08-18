@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.subscription import Subscription, SubscriptionStatus
+from app.models.usage_event import EventName
 from app.models.user import User
 from app.models.webhook_event import ProcessedWebhookEvent
+from app.services.analytics_service import record_event
 
 logger = logging.getLogger("app.billing")
 settings = get_settings()
@@ -173,6 +175,12 @@ def _apply_checkout_completed(db: Session, session_obj: dict) -> None:
     subscription.stripe_subscription_id = session_obj.get("subscription")
     subscription.status = SubscriptionStatus.ACTIVE.value
     db.commit()
+    record_event(
+        db,
+        EventName.SUBSCRIPTION_ACTIVATED,
+        user_id=subscription.user_id,
+        properties={"source": "checkout"},
+    )
 
 
 def _apply_subscription_update(
@@ -187,6 +195,8 @@ def _apply_subscription_update(
     if subscription is None:
         return
 
+    previous_status = subscription.status
+
     if deleted:
         # A deletion event can still carry status="active" for the final
         # period, so the terminal state is set explicitly rather than copied.
@@ -198,6 +208,8 @@ def _apply_subscription_update(
     if period_end:
         subscription.current_period_end = datetime.fromtimestamp(period_end, tz=UTC)
     db.commit()
+
+    _record_status_change(db, subscription, previous_status)
 
 
 def _apply_payment_failed(db: Session, invoice_obj: dict) -> None:
@@ -213,5 +225,40 @@ def _apply_payment_failed(db: Session, invoice_obj: dict) -> None:
     if subscription is None:
         return
 
+    previous_status = subscription.status
     subscription.status = SubscriptionStatus.PAST_DUE.value
     db.commit()
+
+    _record_status_change(db, subscription, previous_status)
+
+
+_STATUS_EVENTS = {
+    SubscriptionStatus.ACTIVE.value: EventName.SUBSCRIPTION_ACTIVATED,
+    SubscriptionStatus.CANCELED.value: EventName.SUBSCRIPTION_CANCELED,
+    SubscriptionStatus.PAST_DUE.value: EventName.SUBSCRIPTION_PAST_DUE,
+}
+
+
+def _record_status_change(
+    db: Session, subscription: Subscription, previous_status: str
+) -> None:
+    """Emit an event only when the status actually moved.
+
+    Stripe re-sends customer.subscription.updated for changes that don't
+    touch status at all (a payment method, a trial end date). Recording
+    unconditionally would turn those into phantom churn and activation
+    spikes in the funnel.
+    """
+    if subscription.status == previous_status:
+        return
+
+    event_name = _STATUS_EVENTS.get(subscription.status)
+    if event_name is None:
+        return
+
+    record_event(
+        db,
+        event_name,
+        user_id=subscription.user_id,
+        properties={"from": previous_status, "to": subscription.status},
+    )
