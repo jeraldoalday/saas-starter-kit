@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.security import verify_password
 from app.models.subscription import Subscription
 from app.models.token import OneTimeToken
+from app.models.usage_event import UsageEvent
 from app.models.user import User
 
 logger = logging.getLogger("app.account")
@@ -32,6 +33,12 @@ def export_user_data(db: Session, user: User) -> dict[str, Any]:
     subscription = user.subscription
     token_count = (
         db.query(OneTimeToken).filter(OneTimeToken.user_id == user.id).count()
+    )
+    events = (
+        db.query(UsageEvent)
+        .filter(UsageEvent.user_id == user.id)
+        .order_by(UsageEvent.occurred_at.desc())
+        .all()
     )
 
     return {
@@ -63,6 +70,17 @@ def export_user_data(db: Session, user: User) -> dict[str, Any]:
             else None
         ),
         "pending_email_tokens": token_count,
+        # Behaviour recorded about someone is data held about them, so the
+        # export has to include it or it under-reports.
+        "usage_events": [
+            {
+                "name": event.name,
+                "source": event.source,
+                "properties": event.properties,
+                "occurred_at": event.occurred_at.isoformat(),
+            }
+            for event in events
+        ],
     }
 
 
@@ -81,10 +99,13 @@ def delete_account(db: Session, user: User, password: str) -> None:
 
     user_id = user.id
 
-    # Tokens have no ORM relationship on User, and SQLite doesn't enforce
-    # foreign keys by default, so leaving these to ON DELETE CASCADE would
-    # behave differently under test than in production.
+    # Tokens and usage events have no ORM relationship on User, and SQLite
+    # doesn't enforce foreign keys by default, so leaving these to ON DELETE
+    # CASCADE would behave differently under test than in production.
     db.query(OneTimeToken).filter(OneTimeToken.user_id == user_id).delete(
+        synchronize_session=False
+    )
+    db.query(UsageEvent).filter(UsageEvent.user_id == user_id).delete(
         synchronize_session=False
     )
 

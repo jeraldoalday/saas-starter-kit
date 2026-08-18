@@ -1,5 +1,6 @@
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.token import OneTimeToken, TokenPurpose
+from app.models.usage_event import UsageEvent
 from app.models.user import User
 from app.services.token_service import issue_token
 
@@ -173,3 +174,27 @@ def test_delete_requires_authentication(client):
     )
 
     assert response.status_code == 401
+
+
+def test_export_includes_recorded_usage_events(client, db_session):
+    """Behaviour recorded about someone is data held about them."""
+    headers = _auth(client)
+
+    body = client.get("/api/v1/users/me/export", headers=headers).json()
+
+    names = [event["name"] for event in body["usage_events"]]
+    assert "user.registered" in names
+    assert "user.logged_in" in names
+
+
+def test_delete_erases_the_accounts_usage_events(client, db_session):
+    headers = _auth(client)
+    user_id = db_session.query(User).filter(User.email == EMAIL).one().id
+
+    client.request(
+        "DELETE", "/api/v1/users/me", json={"password": PASSWORD}, headers=headers
+    )
+
+    assert (
+        db_session.query(UsageEvent).filter(UsageEvent.user_id == user_id).count() == 0
+    )
