@@ -132,3 +132,17 @@ export function fetchMyUsage(days = 14): Promise<UsageSummary> {
     token: getAccessToken(),
   });
 }
+
+/**
+ * Turn a wire event name into something readable:
+ * "billing.checkout_started" becomes "Billing: checkout started".
+ *
+ * Lives here beside the names themselves rather than in the card, so any
+ * other view listing events formats them the same way.
+ */
+export function humanizeEventName(name: string): string {
+  const [namespace, ...rest] = name.split(".");
+  const action = rest.join(" ").replace(/_/g, " ");
+  if (!action) return namespace.replace(/_/g, " ");
+  return `${namespace.charAt(0).toUpperCase()}${namespace.slice(1)}: ${action}`;
+}
