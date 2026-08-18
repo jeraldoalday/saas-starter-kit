@@ -37,15 +37,15 @@ a spec.
 - [x] Structured logging (backend + frontend)
 - [x] Error tracking (Sentry or equivalent)
 - [x] Health/readiness probes for orchestration
-- [ ] Basic usage metrics/analytics hook
+- [x] Basic usage metrics/analytics hook
 
 ## Day 13-14 — Ship prep
 - [x] Production Dockerfiles (multi-stage, non-root, slim images)
-- [ ] Deploy target decided + documented (e.g. Fly.io/Render/ECS)
-- [ ] Staging environment smoke-tested end-to-end
+- [x] Deploy target decided + documented (Fly.io — see docs/DEPLOYMENT.md)
+- [ ] Staging environment smoke-tested end-to-end (checklist written; needs a real deploy to run against)
 - [ ] PRD finalized against what actually shipped
 
 ## Post-PRD — Maintenance mode
-- [ ] Dependency update cadence (Dependabot/Renovate)
+- [x] Dependency update cadence (Dependabot, weekly + grouped)
 - [ ] On-call/monitoring alert routing
-- [ ] Changelog process for buyers/licensees
+- [x] Changelog process for buyers/licensees (CHANGELOG.md)

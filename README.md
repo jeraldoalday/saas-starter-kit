@@ -29,7 +29,8 @@ isn't paying for dead weight.
 │   │   ├── core/        settings + security (hashing, JWT)
 │   │   ├── models/      SQLAlchemy models
 │   │   ├── schemas/     Pydantic request/response schemas
-│   │   └── services/    business logic (auth, billing)
+│   │   ├── services/    business logic (auth, billing, analytics)
+│   │   └── scripts/     operational CLIs (Stripe sync, event pruning)
 │   ├── migrations/      Alembic migrations
 │   └── tests/           pytest suite
 ├── frontend/           React SPA (Vite)
@@ -40,10 +41,11 @@ isn't paying for dead weight.
 │       ├── App.tsx       route table
 │       ├── pages/        Landing, Login, Register, Dashboard
 │       ├── components/   UI primitives + feature components + ProtectedRoute
-│       ├── lib/          API client, auth helpers, types
+│       ├── lib/          API client, auth/analytics helpers, types
 │       ├── hooks/        client hooks (useAuth)
 │       └── styles/       Tailwind entry + design tokens
-└── .github/workflows/  CI for backend + frontend
+├── docs/               deployment guide
+└── .github/            CI workflows + Dependabot config
 ```
 
 ## Getting started
@@ -147,6 +149,32 @@ no-op: the app boots and runs the same way with no Sentry project required.
   report render errors that escape the route tree. `VITE_SENTRY_ENVIRONMENT`
   overrides the environment tag, which otherwise follows the Vite build mode.
 
+### Usage analytics
+
+Product events are recorded in the application's own database
+(`usage_events`) rather than shipped to a third-party analytics SDK, so they
+can be joined against the rows they describe and are erased with the account
+when it is deleted.
+
+- The backend records the lifecycle itself — signup, verification, login,
+  checkout, subscription activation and churn — so the funnel stays
+  measurable even when the SPA never loads.
+- The SPA records its own events through `trackEvent()`
+  (`frontend/src/lib/analytics.ts`), which buffers and flushes them as one
+  batch. Names must match `namespace.action_in_snake_case`; the API rejects
+  anything else, which is what keeps the event-name column low cardinality.
+- `GET /api/v1/analytics/me` answers for the calling account and backs the
+  dashboard's activity panel. `GET /api/v1/analytics/summary` and
+  `GET /api/v1/analytics/events` aggregate every account and are admin-only.
+- `ANALYTICS_ENABLED=false` stops recording without affecting the read
+  endpoints, which keep answering from what is already stored.
+
+The table is append-only, so schedule the prune:
+
+```bash
+make prune-usage-events        # honours ANALYTICS_RETENTION_DAYS
+```
+
 ### Stripe product/price catalog
 
 Plans are defined in code (`backend/app/core/billing_plans.py`) instead of
@@ -160,6 +188,19 @@ make sync-stripe-catalog
 This creates each plan's Product/Price if missing, or reuses the existing one
 (matched by `lookup_key`), and prints the resulting price IDs to set as
 `STRIPE_PRICE_ID_MONTHLY`. Safe to re-run.
+
+## Deploying
+
+[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) covers the chosen target
+(Fly.io), the secrets each service needs, migrations on release, the
+scheduled retention prune, and a seven-step staging smoke test that
+exercises Postgres, SMTP, Stripe in both directions and the analytics path.
+
+## Changelog
+
+User-visible changes are recorded in [CHANGELOG.md](./CHANGELOG.md), with an
+upgrade-notes section per version covering migrations to run and settings to
+add. Add an entry in the same commit as the change.
 
 ## Roadmap to PRD-ready
 
