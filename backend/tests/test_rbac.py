@@ -142,3 +142,189 @@ def test_invalid_role_value_is_rejected(client, db_session):
 
 def test_admin_endpoints_require_authentication(client):
     assert client.get("/api/v1/admin/users").status_code == 401
+
+
+# --- account activation ---------------------------------------------------
+
+
+def _user_id(db_session, email: str):
+    return db_session.query(User).filter(User.email == email).one().id
+
+
+def test_admin_can_deactivate_a_member(client, db_session):
+    admin = _make_user(client, db_session, "admin-status@example.com", Role.ADMIN)
+    _make_user(client, db_session, "victim@example.com")
+    user_id = _user_id(db_session, "victim@example.com")
+
+    response = client.patch(
+        f"/api/v1/admin/users/{user_id}/status",
+        json={"is_active": False},
+        headers=admin,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["is_active"] is False
+
+
+def test_deactivation_takes_effect_at_the_next_login(client, db_session):
+    admin = _make_user(client, db_session, "admin-login@example.com", Role.ADMIN)
+    _make_user(client, db_session, "loggedout@example.com")
+    user_id = _user_id(db_session, "loggedout@example.com")
+
+    client.patch(
+        f"/api/v1/admin/users/{user_id}/status",
+        json={"is_active": False},
+        headers=admin,
+    )
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "loggedout@example.com", "password": PASSWORD},
+    )
+
+    assert login.status_code == 403
+
+
+def test_reactivation_restores_access(client, db_session):
+    admin = _make_user(client, db_session, "admin-restore@example.com", Role.ADMIN)
+    _make_user(client, db_session, "backagain@example.com")
+    user_id = _user_id(db_session, "backagain@example.com")
+
+    for state in (False, True):
+        client.patch(
+            f"/api/v1/admin/users/{user_id}/status",
+            json={"is_active": state},
+            headers=admin,
+        )
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "backagain@example.com", "password": PASSWORD},
+    )
+    assert login.status_code == 200
+
+
+def test_admin_cannot_deactivate_themselves(client, db_session):
+    admin = _make_user(client, db_session, "self@example.com", Role.ADMIN)
+    user_id = _user_id(db_session, "self@example.com")
+
+    response = client.patch(
+        f"/api/v1/admin/users/{user_id}/status",
+        json={"is_active": False},
+        headers=admin,
+    )
+
+    assert response.status_code == 400
+
+
+def test_admin_cannot_deactivate_an_owner(client, db_session):
+    admin = _make_user(client, db_session, "admin-vs-owner@example.com", Role.ADMIN)
+    _make_user(client, db_session, "owner@example.com", Role.OWNER)
+    user_id = _user_id(db_session, "owner@example.com")
+
+    response = client.patch(
+        f"/api/v1/admin/users/{user_id}/status",
+        json={"is_active": False},
+        headers=admin,
+    )
+
+    assert response.status_code == 403
+
+
+def test_admin_cannot_deactivate_a_peer(client, db_session):
+    """Otherwise one admin could lock every other admin out."""
+    admin = _make_user(client, db_session, "admin-a@example.com", Role.ADMIN)
+    _make_user(client, db_session, "admin-b@example.com", Role.ADMIN)
+    user_id = _user_id(db_session, "admin-b@example.com")
+
+    response = client.patch(
+        f"/api/v1/admin/users/{user_id}/status",
+        json={"is_active": False},
+        headers=admin,
+    )
+
+    assert response.status_code == 403
+
+
+def test_member_cannot_change_account_status(client, db_session):
+    member = _make_user(client, db_session, "nobody@example.com")
+    _make_user(client, db_session, "target-status@example.com")
+    user_id = _user_id(db_session, "target-status@example.com")
+
+    response = client.patch(
+        f"/api/v1/admin/users/{user_id}/status",
+        json={"is_active": False},
+        headers=member,
+    )
+
+    assert response.status_code == 403
+
+
+def test_status_change_on_an_unknown_user_is_404(client, db_session):
+    import uuid
+
+    admin = _make_user(client, db_session, "admin-404@example.com", Role.ADMIN)
+
+    response = client.patch(
+        f"/api/v1/admin/users/{uuid.uuid4()}/status",
+        json={"is_active": False},
+        headers=admin,
+    )
+
+    assert response.status_code == 404
+
+
+def test_deactivation_is_recorded_as_an_event(client, db_session):
+    from app.models.usage_event import EventName, UsageEvent
+
+    admin = _make_user(client, db_session, "admin-event@example.com", Role.ADMIN)
+    _make_user(client, db_session, "tracked@example.com")
+    user_id = _user_id(db_session, "tracked@example.com")
+
+    client.patch(
+        f"/api/v1/admin/users/{user_id}/status",
+        json={"is_active": False},
+        headers=admin,
+    )
+
+    event = (
+        db_session.query(UsageEvent)
+        .filter(UsageEvent.name == EventName.ACCOUNT_DEACTIVATED.value)
+        .one()
+    )
+    assert event.user_id == user_id
+
+
+def test_no_event_when_the_status_does_not_change(client, db_session):
+    from app.models.usage_event import UsageEvent
+
+    admin = _make_user(client, db_session, "admin-noop@example.com", Role.ADMIN)
+    _make_user(client, db_session, "already-on@example.com")
+    user_id = _user_id(db_session, "already-on@example.com")
+
+    client.patch(
+        f"/api/v1/admin/users/{user_id}/status",
+        json={"is_active": True},
+        headers=admin,
+    )
+
+    assert (
+        db_session.query(UsageEvent)
+        .filter(UsageEvent.name.like("account.%"))
+        .count()
+        == 0
+    )
+
+
+def test_user_list_can_be_filtered_by_status(client, db_session):
+    admin = _make_user(client, db_session, "admin-filter@example.com", Role.ADMIN)
+    _make_user(client, db_session, "inactive@example.com")
+    user_id = _user_id(db_session, "inactive@example.com")
+    client.patch(
+        f"/api/v1/admin/users/{user_id}/status",
+        json={"is_active": False},
+        headers=admin,
+    )
+
+    body = client.get("/api/v1/admin/users?is_active=false", headers=admin).json()
+
+    assert [entry["email"] for entry in body] == ["inactive@example.com"]

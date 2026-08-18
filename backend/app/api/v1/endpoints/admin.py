@@ -5,9 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import require_admin, require_owner
-from app.models.role import Role
+from app.models.role import Role, rank
+from app.models.usage_event import EventName
 from app.models.user import User
-from app.schemas.user import UserRead, UserRoleUpdate
+from app.schemas.user import UserRead, UserRoleUpdate, UserStatusUpdate
+from app.services.analytics_service import record_event
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -16,12 +18,16 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 def list_users(
     limit: int = Query(default=50, le=200, ge=1),
     offset: int = Query(default=0, ge=0),
+    is_active: bool | None = Query(
+        default=None, description="Filter to active or deactivated accounts."
+    ),
     _: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> list[UserRead]:
-    return (
-        db.query(User).order_by(User.created_at.desc()).limit(limit).offset(offset).all()
-    )
+    query = db.query(User)
+    if is_active is not None:
+        query = query.filter(User.is_active.is_(is_active))
+    return query.order_by(User.created_at.desc()).limit(limit).offset(offset).all()
 
 
 @router.patch("/users/{user_id}/role", response_model=UserRead)
@@ -49,4 +55,56 @@ def update_user_role(
     user.role = data.role.value
     db.commit()
     db.refresh(user)
+    return user
+
+
+@router.patch("/users/{user_id}/status", response_model=UserRead)
+def update_user_status(
+    user_id: uuid.UUID,
+    data: UserStatusUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> UserRead:
+    """Switch an account off, or back on.
+
+    Deactivation is the reversible counterpart to deletion: the rows stay,
+    the sessions stop. Login refuses a deactivated account and every other
+    entry point already checks is_active, so this takes effect on the next
+    request rather than after the current access token expires.
+    """
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+
+    if user.id == current_user.id:
+        # An admin who switches themselves off cannot switch themselves back
+        # on, and would need another admin to undo it.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot change your own account status",
+        )
+
+    if rank(user.role) >= rank(current_user.role):
+        # Otherwise an admin could disable an owner, or their own peers, and
+        # escalate by locking everyone else out.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot change the status of an account at or above your role",
+        )
+
+    was_active = user.is_active
+    user.is_active = data.is_active
+    db.commit()
+    db.refresh(user)
+
+    if was_active != user.is_active:
+        record_event(
+            db,
+            EventName.ACCOUNT_REACTIVATED if user.is_active else EventName.ACCOUNT_DEACTIVATED,
+            user_id=user.id,
+            properties={"by_role": current_user.role},
+        )
+
     return user

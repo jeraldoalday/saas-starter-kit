@@ -31,6 +31,8 @@ class EventName(StrEnum):
     SUBSCRIPTION_CANCELED = "billing.subscription_canceled"
     SUBSCRIPTION_PAST_DUE = "billing.subscription_past_due"
     ACCOUNT_DELETED = "account.deleted"
+    ACCOUNT_DEACTIVATED = "account.deactivated"
+    ACCOUNT_REACTIVATED = "account.reactivated"
 
 
 class EventSource(StrEnum):

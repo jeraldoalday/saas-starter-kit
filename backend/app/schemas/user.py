@@ -30,6 +30,10 @@ class UserRoleUpdate(BaseModel):
     role: Role
 
 
+class UserStatusUpdate(BaseModel):
+    is_active: bool
+
+
 class DeleteAccountRequest(BaseModel):
     # Re-authentication, so a stolen access token alone can't delete an account.
     password: str
