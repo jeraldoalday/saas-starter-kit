@@ -4,10 +4,11 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.core.security import MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH
 from app.models.role import Role
+from app.schemas.fields import NormalizedEmail
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: NormalizedEmail
     # max_length counts characters while bcrypt's limit is bytes, so this is a
     # first-line guard; hash_password() enforces the real byte limit.
     password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_BYTES)

@@ -116,3 +116,41 @@ def test_refresh_issues_new_access_token(client):
     )
     assert response.status_code == 200
     assert response.json()["access_token"]
+
+
+def test_registration_stores_the_address_folded(client, db_session):
+    from app.models.user import User
+
+    _register(client, email="  Ada.Lovelace@Example.COM  ")
+
+    user = db_session.query(User).filter(User.email == "ada.lovelace@example.com").one()
+    assert user.email == "ada.lovelace@example.com"
+
+
+def test_registering_the_same_address_in_another_case_is_a_conflict(client):
+    """One inbox, one account — regardless of which shift key they pressed."""
+    _register(client, email="ada@example.com")
+
+    response = _register(client, email="ADA@example.com")
+
+    assert response.status_code == 409
+
+
+def test_login_is_case_insensitive(client):
+    _register(client, email="ada@example.com", password="s3cret-password")
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "Ada@Example.com", "password": "s3cret-password"},
+    )
+
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+
+
+def test_password_reset_lookup_is_case_insensitive(client, outbox):
+    _register(client, email="ada@example.com")
+
+    client.post("/api/v1/auth/forgot-password", json={"email": "ADA@EXAMPLE.COM"})
+
+    assert outbox.last_to("ada@example.com") is not None

@@ -1,10 +1,11 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from app.core.security import MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH
+from app.schemas.fields import NormalizedEmail
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmail
     password: str
 
 
@@ -23,7 +24,7 @@ class VerifyEmailRequest(BaseModel):
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
+    email: NormalizedEmail
 
 
 class ResetPasswordRequest(BaseModel):
