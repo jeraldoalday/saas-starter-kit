@@ -1,0 +1,67 @@
+# Dependency update cadence.
+#
+# Weekly rather than daily: this is a boilerplate other people deploy, so a
+# steady trickle of reviewable PRs beats a flood nobody reads. Everything is
+# grouped per ecosystem so one Monday produces one PR per manifest instead of
+# a dozen — the review question is almost always "did CI stay green", which is
+# answered once per group rather than once per package.
+version: 2
+
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      backend-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Majors land as their own PR, because they are the ones that need a
+      # human to read a changelog rather than a green tick.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      frontend-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      # React and its type packages have to move together; splitting them
+      # across PRs leaves the typecheck failing on whichever lands first.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories:
+      - /backend
+      - /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(docker)"
