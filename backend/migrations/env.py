@@ -3,9 +3,12 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+# Importing the package registers every model on Base.metadata, which is
+# what autogenerate diffs against. Naming individual models here meant a
+# new one was only picked up by accident, via another module's import.
+import app.models  # noqa: F401
 from app.core.config import get_settings
 from app.database import Base
-from app.models import Subscription, User  # noqa: F401  (registers models on Base.metadata)
 
 config = context.config
 if config.config_file_name is not None:
