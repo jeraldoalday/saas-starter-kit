@@ -1,5 +1,5 @@
 # --- builder: compile deps into a venv, with build tools available ---
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ COPY alembic.ini ./
 RUN pip install --no-cache-dir .
 
 # --- runtime: no compiler, no build tools, non-root ---
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app
 
