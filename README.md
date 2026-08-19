@@ -210,6 +210,10 @@ in `ROADMAP.md`): real Stripe product/price wiring, email delivery
 (verification/reset), role-based access control, rate limiting, structured
 logging/observability, and a hardened production Docker/deploy setup.
 
+[docs/PRD.md](./docs/PRD.md) is the product requirements doc written
+against what actually shipped — scope, explicit non-goals, and the two
+items still open at ship time.
+
 ## License
 
 See [LICENSE.md](./LICENSE.md) — proprietary placeholder, replace before

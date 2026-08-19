@@ -43,7 +43,7 @@ a spec.
 - [x] Production Dockerfiles (multi-stage, non-root, slim images)
 - [x] Deploy target decided + documented (Fly.io — see docs/DEPLOYMENT.md)
 - [ ] Staging environment smoke-tested end-to-end (checklist written; needs a real deploy to run against)
-- [ ] PRD finalized against what actually shipped
+- [x] PRD finalized against what actually shipped (docs/PRD.md)
 
 ## Post-PRD — Maintenance mode
 - [x] Dependency update cadence (Dependabot, weekly + grouped)
