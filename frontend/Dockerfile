@@ -1,4 +1,4 @@
-FROM node:22-slim AS build
+FROM node:26-slim AS build
 WORKDIR /app
 # Vite inlines env vars at build time, so the API URL is baked into the bundle
 # here rather than read from the container environment at runtime.
