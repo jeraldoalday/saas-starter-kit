@@ -47,5 +47,5 @@ a spec.
 
 ## Post-PRD — Maintenance mode
 - [x] Dependency update cadence (Dependabot, weekly + grouped)
-- [ ] On-call/monitoring alert routing
+- [x] On-call/monitoring alert routing
 - [x] Changelog process for buyers/licensees (CHANGELOG.md)

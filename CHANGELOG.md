@@ -43,6 +43,12 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `python -m app.scripts.prune_usage_events`) deletes events past
   `ANALYTICS_RETENTION_DAYS`. Run it on a schedule; the table is append-only
   otherwise.
+- **On-call alert routing.** `app/services/alerting` posts a JSON payload to
+  `ALERT_WEBHOOK_URL` when `ALERT_BACKEND=webhook` — Slack incoming webhooks
+  render it directly, and PagerDuty/Opsgenie's generic webhook intake accept
+  it as-is. `python -m app.scripts.check_health_and_alert` checks the
+  database directly and fires an alert on failure; run it on a schedule the
+  same way as `prune_usage_events`.
 
 ### Fixed
 
@@ -71,7 +77,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   then re-run it. This is deliberate: folding them regardless would collide
   with the unique index and abort with an error identifying nobody.
 - New optional settings, all with working defaults: `ANALYTICS_ENABLED`,
-  `ANALYTICS_RETENTION_DAYS`, `ANALYTICS_MAX_BATCH_SIZE`.
+  `ANALYTICS_RETENTION_DAYS`, `ANALYTICS_MAX_BATCH_SIZE`, `ALERT_BACKEND`,
+  `ALERT_WEBHOOK_URL`, `ALERT_WEBHOOK_TIMEOUT_SECONDS`.
 - Login now answers `403` (not `401`) for a deactivated account. A client
   that treats every failed login identically needs no change; one that
   distinguishes them should surface the deactivation message.

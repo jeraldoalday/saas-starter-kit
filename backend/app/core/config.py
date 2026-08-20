@@ -81,6 +81,15 @@ class Settings(BaseSettings):
     # Errors are captured regardless of this setting.
     sentry_traces_sample_rate: float = 0.0
 
+    # "console" logs alerts instead of sending; "webhook" posts them to
+    # alert_webhook_url. That URL takes a plain JSON POST, which is what a
+    # Slack incoming webhook, PagerDuty/Opsgenie generic webhook integration,
+    # or an Alertmanager-style relay all accept - so on-call routing is a
+    # matter of pointing it at whichever of those the buyer already runs.
+    alert_backend: str = "console"
+    alert_webhook_url: str = ""
+    alert_webhook_timeout_seconds: int = 5
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

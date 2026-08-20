@@ -154,6 +154,39 @@ fly machine run --app saas-backend \
 Check what it would remove first with
 `fly ssh console --app saas-backend -C "python -m app.scripts.prune_usage_events --dry-run"`.
 
+## 6. On-call alert routing
+
+`app/services/alerting` gives a buyer a vendor-agnostic hook into whatever
+paging tool they run. Two env vars control it:
+
+```bash
+fly secrets set --app saas-backend \
+  ALERT_BACKEND="webhook" \
+  ALERT_WEBHOOK_URL="https://hooks.slack.com/services/…"
+```
+
+Leaving `ALERT_BACKEND` unset (the default, `console`) logs alerts instead
+of sending them — fine for local dev, wrong for production. The webhook
+payload is a plain JSON POST (`{"text": …, "subject": …, "body": …,
+"severity": …}`), which a Slack incoming webhook renders directly and which
+PagerDuty's and Opsgenie's generic webhook integrations both accept as-is.
+
+Point it at a health-check watcher on a schedule, the same way as
+`prune_usage_events`:
+
+```bash
+fly machine run --app saas-backend \
+  --schedule 5m \
+  --command "python -m app.scripts.check_health_and_alert"
+```
+
+Confirm routing actually reaches the paging tool before relying on it:
+
+```bash
+fly ssh console --app saas-backend \
+  -C "python -m app.scripts.check_health_and_alert --always-alert"
+```
+
 ## Staging
 
 Run the same two apps with a `-staging` suffix and their own Postgres, with

@@ -122,13 +122,15 @@ buyer-specific decisions this kit shouldn't make on their behalf:
   builds their own view over them.
 - **Any UI design system beyond Tailwind utility classes already in use.**
   The landing/dashboard pages are a starting layout, not a finished brand.
-- **On-call paging integration** (PagerDuty/Opsgenie/etc.) — Sentry
-  captures and groups errors; routing those into a paging tool is
-  environment-specific and is the one item still open on the roadmap.
+- **A specific paging vendor's SDK** (PagerDuty, Opsgenie, etc.). Sentry
+  captures and groups errors, and `app/services/alerting` gives on-call
+  routing a vendor-agnostic webhook hook; wiring that to a particular
+  provider's API instead of its generic webhook intake is a buyer-specific
+  choice this kit shouldn't make on their behalf.
 
 ## Known gaps at ship time
 
-Two roadmap items are open, and this PRD does not claim they're done:
+One roadmap item is open, and this PRD does not claim it's done:
 
 - **Staging smoke test.** `docs/DEPLOYMENT.md` has a seven-step smoke test
   that exercises Postgres, SMTP, Stripe in both directions, and the
@@ -136,10 +138,13 @@ Two roadmap items are open, and this PRD does not claim they're done:
   standing staging environment in this repository's CI. This stays a
   documented procedure, not a checked-off result, until someone runs it
   against an actual Fly.io deploy.
-- **On-call/monitoring alert routing.** Sentry is wired up for error
-  capture; routing Sentry alerts (or a platform health-check failure) to a
-  paging tool is a buyer-specific integration deferred to whoever stands up
-  the production account.
+
+On-call/monitoring alert routing is closed: `app/services/alerting`
+(console transport by default, JSON webhook when `ALERT_BACKEND=webhook`)
+plus the `check_health_and_alert` script — schedulable the same way as
+`prune_usage_events` — give a buyer a routing hook straight into Slack,
+PagerDuty, Opsgenie or any other generic-webhook intake. See
+`docs/DEPLOYMENT.md` for the env vars and the schedule to set up.
 
 ## Success criteria
 
