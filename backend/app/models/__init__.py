@@ -1,4 +1,5 @@
 from app.models.api_key import ApiKey
+from app.models.auth_session import AuthSession
 from app.models.subscription import Subscription
 from app.models.token import OneTimeToken, TokenPurpose
 from app.models.usage_event import EventName, EventSource, UsageEvent
@@ -8,6 +9,7 @@ from app.models.webhook_event import ProcessedWebhookEvent
 __all__ = [
     "User",
     "ApiKey",
+    "AuthSession",
     "Subscription",
     "ProcessedWebhookEvent",
     "OneTimeToken",

@@ -10,6 +10,7 @@ from app.models.role import Role
 
 if TYPE_CHECKING:
     from app.models.api_key import ApiKey
+    from app.models.auth_session import AuthSession
     from app.models.subscription import Subscription
 
 
@@ -36,5 +37,10 @@ class User(Base):
     # it the rows would outlive the user and their key would keep working
     # right up until the foreign key complained.
     api_keys: Mapped[list["ApiKey"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    # Same reasoning as api_keys: a deleted account must not leave behind
+    # rows that would still authenticate a refresh.
+    sessions: Mapped[list["AuthSession"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
