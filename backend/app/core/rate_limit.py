@@ -34,23 +34,27 @@ class InMemoryRateLimiter:
     """
 
     def __init__(self) -> None:
-        self._counters: dict[str, tuple[int, float]] = {}
+        # Each entry keeps the window length it was counted under, not just
+        # when it started: routes have different windows (60s for login,
+        # 300s for password reset) and pruning has to judge every entry
+        # against its own.
+        self._counters: dict[str, tuple[int, float, int]] = {}
         self._lock = threading.Lock()
 
     def hit(self, key: str, limit: int, window_seconds: int) -> RateLimitResult:
         now = time.monotonic()
 
         with self._lock:
-            count, window_start = self._counters.get(key, (0, now))
+            count, window_start, _ = self._counters.get(key, (0, now, window_seconds))
 
             if now - window_start >= window_seconds:
                 count, window_start = 0, now
 
             count += 1
-            self._counters[key] = (count, window_start)
+            self._counters[key] = (count, window_start, window_seconds)
 
             if len(self._counters) > 10_000:
-                self._prune(now, window_seconds)
+                self._prune(now)
 
         elapsed = now - window_start
         retry_after = max(1, int(window_seconds - elapsed))
@@ -61,10 +65,17 @@ class InMemoryRateLimiter:
             allowed=True, remaining=limit - count, retry_after=retry_after
         )
 
-    def _prune(self, now: float, window_seconds: int) -> None:
+    def _prune(self, now: float) -> None:
+        """Drop entries whose own window has lapsed.
+
+        Judging every entry against the window of whichever request happened
+        to trigger the prune would clear counters early — a burst of login
+        hits (60s window) would wipe a caller's half-spent password-reset
+        budget (300s), handing them a fresh allowance of the slower limit.
+        """
         expired = [
             key
-            for key, (_, started) in self._counters.items()
+            for key, (_, started, window_seconds) in self._counters.items()
             if now - started >= window_seconds
         ]
         for key in expired:

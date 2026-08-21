@@ -78,3 +78,38 @@ def test_register_endpoint_is_rate_limited(client):
         )
 
     assert 429 in statuses
+
+
+def test_pruning_keeps_entries_whose_own_window_is_still_open(limiter):
+    """A prune triggered by a short-window route must not clear long-window
+    counters. Login (60s) and password reset (300s) share this limiter, and
+    clearing the latter early would hand a caller a fresh reset allowance
+    every time enough login traffic tripped the prune."""
+    limiter.hit("slow", limit=5, window_seconds=3600)
+
+    # Fill past the prune threshold with entries under a zero-length window,
+    # every one of which is immediately expired.
+    for index in range(10_001):
+        limiter.hit(f"fast-{index}", limit=1, window_seconds=0)
+
+    # The slow key's window has not lapsed, so its count must have survived.
+    assert limiter.hit("slow", limit=5, window_seconds=3600).remaining == 3
+
+
+def test_pruning_drops_entries_whose_window_has_lapsed(limiter):
+    for index in range(10_001):
+        limiter.hit(f"fast-{index}", limit=1, window_seconds=0)
+
+    assert len(limiter._counters) < 10_001
+
+
+def test_a_key_reused_with_a_different_window_adopts_the_new_one(limiter):
+    """Windows are per-hit rather than per-key: a route's limit can be
+    retuned in config without leaving stale entries counting under the old
+    window until they lapse."""
+    limiter.hit("k", limit=5, window_seconds=3600)
+
+    result = limiter.hit("k", limit=5, window_seconds=0)
+
+    # The zero-length window has always elapsed, so the counter restarted.
+    assert result.remaining == 4
