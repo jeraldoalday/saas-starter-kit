@@ -125,28 +125,40 @@ def record_events(db: Session, events: Iterable[tuple[str, dict]], *, user: User
 
     The SPA buffers events and flushes them together, so the common case is
     a handful of rows that should cost one round trip, not one each.
+
+    All or nothing: the count returned is what the caller can rely on having
+    been committed, so a failure anywhere in the batch reports zero rather
+    than a number that a rollback has already taken back.
     """
     if not get_settings().analytics_enabled:
         return 0
 
-    stored = 0
-    for name, properties in events:
-        if record_event(
-            db, name, user=user, source=source, properties=properties, commit=False
-        ) is not None:
-            stored += 1
-
-    if stored == 0:
+    now = _now()
+    user_id = user.id if user is not None else None
+    rows = [
+        UsageEvent(
+            user_id=user_id,
+            name=str(name),
+            source=str(source),
+            properties=properties or {},
+            occurred_at=now,
+        )
+        for name, properties in events
+    ]
+    if not rows:
         return 0
 
     try:
+        db.add_all(rows)
         db.commit()
     except SQLAlchemyError:
+        # Best-effort, like record_event: the caller's own work is what
+        # matters, and losing a batch of analytics is not worth a 500.
         logger.exception("failed to commit usage event batch")
         db.rollback()
         return 0
 
-    return stored
+    return len(rows)
 
 
 def _as_date(value: object) -> date:

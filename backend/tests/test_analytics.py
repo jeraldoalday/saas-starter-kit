@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import get_settings
 from app.models.role import Role
@@ -482,3 +483,31 @@ def test_service_module_exposes_a_stable_surface():
     """The prune script and endpoints import these by name."""
     for exported in analytics_service.__all__:
         assert hasattr(analytics_service, exported)
+
+
+def test_record_events_reports_zero_when_the_batch_fails(db_session, monkeypatch):
+    """A rolled-back batch stored nothing, and must say so.
+
+    The count goes back to the client as `recorded`, and reporting rows a
+    rollback has already taken back would make ingest look healthy while the
+    events table stayed empty.
+    """
+    user = _make_user(db_session)
+
+    def _explode(*_args, **_kwargs):
+        raise SQLAlchemyError("database is on fire")
+
+    monkeypatch.setattr(db_session, "commit", _explode)
+
+    stored = record_events(
+        db_session, [("dashboard.viewed", {}), ("billing.card_clicked", {})], user=user
+    )
+
+    monkeypatch.undo()
+    db_session.rollback()
+    assert stored == 0
+    assert db_session.query(UsageEvent).count() == 0
+
+
+def test_record_events_ignores_an_empty_batch(db_session):
+    assert record_events(db_session, [], user=_make_user(db_session)) == 0
