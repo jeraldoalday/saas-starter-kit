@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.services.alerts import Severity, notify
 
 logger = logging.getLogger("app.health")
 router = APIRouter(tags=["health"])
@@ -40,6 +41,15 @@ def readiness(response: Response, db: Session = Depends(get_db)) -> dict[str, st
         db.execute(text("SELECT 1"))
     except SQLAlchemyError:
         logger.exception("readiness check failed: database unreachable")
+        # Suppression matters here more than anywhere: an orchestrator
+        # probes this every few seconds, and an outage would otherwise send
+        # one notification per probe for as long as it lasted.
+        notify(
+            "Readiness check failing",
+            "The database is unreachable, so this instance is refusing traffic.",
+            severity=Severity.CRITICAL,
+            key="health.database_unreachable",
+        )
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "unavailable", "reason": "database"}
 

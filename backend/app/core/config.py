@@ -75,6 +75,21 @@ class Settings(BaseSettings):
     # Ceiling on how many events one batched ingest call may carry.
     analytics_max_batch_size: int = 50
 
+    # Operational alerting. "log" writes to the structured log at a level a
+    # log-based monitor can watch; "webhook" POSTs to an incoming webhook
+    # (Slack-compatible) and needs alert_webhook_url set.
+    alert_backend: str = "log"
+    alert_webhook_url: str = ""
+    # Alerts below this severity are dropped: info/warning/critical.
+    alert_min_severity: str = "warning"
+    # How long the same alert key stays suppressed after being delivered. A
+    # database outage fires the readiness probe every few seconds, and the
+    # on-call channel is only useful while it stays readable.
+    alert_suppression_seconds: int = 300
+    # Ceiling on how long a wedged webhook endpoint can hold the thread that
+    # raised the alert.
+    alert_timeout_seconds: float = 5.0
+
     # Empty disables error tracking entirely (the default for local dev).
     sentry_dsn: str = ""
     # Fraction (0.0-1.0) of requests to sample for performance tracing.

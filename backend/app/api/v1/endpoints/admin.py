@@ -8,7 +8,9 @@ from app.deps import require_admin, require_owner
 from app.models.role import Role, rank
 from app.models.usage_event import EventName
 from app.models.user import User
+from app.schemas.admin import AlertTestRequest, AlertTestResponse
 from app.schemas.user import UserRead, UserRoleUpdate, UserStatusUpdate
+from app.services.alerts import Severity, get_alert_router, notify
 from app.services.analytics_service import record_event
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -108,3 +110,32 @@ def update_user_status(
         )
 
     return user
+
+
+@router.post("/alerts/test", response_model=AlertTestResponse)
+def send_test_alert(
+    data: AlertTestRequest,
+    current_user: User = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> AlertTestResponse:
+    """Push one alert through the real routing path.
+
+    Alert configuration is the kind that is only ever exercised during an
+    incident, which is the worst possible time to discover the webhook URL
+    has a typo in it. Owner-only, because it sends a real notification to
+    whoever is on call.
+
+    The suppression window is deliberately bypassed: two test alerts a
+    minute apart should both arrive, or the test tells you nothing the
+    second time.
+    """
+    router_ = get_alert_router()
+    router_.reset()
+    delivered = notify(
+        "Test alert",
+        data.message,
+        severity=Severity.CRITICAL,
+        key="admin.test_alert",
+        requested_by=str(current_user.id),
+    )
+    return AlertTestResponse(delivered=delivered, backend=type(router_.sender).__name__)

@@ -11,6 +11,7 @@ from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.usage_event import EventName
 from app.models.user import User
 from app.models.webhook_event import ProcessedWebhookEvent
+from app.services.alerts import Severity, notify
 from app.services.analytics_service import record_event
 
 logger = logging.getLogger("app.billing")
@@ -94,6 +95,13 @@ def handle_webhook_event(db: Session, payload: bytes, sig_header: str) -> None:
         # Fail closed: without a secret every payload would be unverifiable,
         # so an unauthenticated caller could drive subscription state.
         logger.error("stripe webhook received but STRIPE_WEBHOOK_SECRET is unset")
+        notify(
+            "Stripe webhook secret is not configured",
+            "Every webhook delivery is being rejected, so subscription state "
+            "has stopped syncing. Set STRIPE_WEBHOOK_SECRET.",
+            severity=Severity.CRITICAL,
+            key="stripe.webhook_secret_missing",
+        )
         raise InvalidWebhookSignatureError()
 
     try:
@@ -102,6 +110,16 @@ def handle_webhook_event(db: Session, payload: bytes, sig_header: str) -> None:
         )
     except (ValueError, stripe.error.SignatureVerificationError) as exc:
         logger.warning("stripe webhook signature rejected")
+        # Worth waking someone for: either the signing secret has rotated
+        # out from under this deployment and billing has silently stopped
+        # syncing, or somebody is posting forged events at it.
+        notify(
+            "Stripe webhook signature rejected",
+            "A webhook delivery failed signature verification. Either the "
+            "signing secret is stale or the payload was forged.",
+            severity=Severity.WARNING,
+            key="stripe.signature_rejected",
+        )
         raise InvalidWebhookSignatureError() from exc
 
     event_id = event.get("id")
@@ -276,6 +294,17 @@ def _apply_payment_failed(db: Session, invoice_obj: dict) -> None:
     db.commit()
 
     _record_status_change(db, subscription, previous_status)
+
+    if previous_status != subscription.status:
+        # Keyed per subscription so one customer's dunning cycle doesn't
+        # suppress the alert for the next customer's.
+        notify(
+            "Subscription payment failed",
+            f"Subscription {stripe_subscription_id} moved to past_due.",
+            severity=Severity.WARNING,
+            key=f"billing.payment_failed:{stripe_subscription_id}",
+            subscription_id=stripe_subscription_id,
+        )
 
 
 _STATUS_EVENTS = {
