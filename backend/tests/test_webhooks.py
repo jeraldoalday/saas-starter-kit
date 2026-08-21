@@ -238,3 +238,96 @@ def test_uuid_user_id_is_matched_as_uuid_not_string(db_session, monkeypatch):
     subscription = db_session.query(Subscription).one()
     db_session.refresh(subscription)
     assert subscription.stripe_customer_id == "cus_uuid"
+
+
+# --- Stripe API version drift ---------------------------------------------
+#
+# Stripe's 2025-03-31 ("basil") version reshaped two fields this handler
+# reads. Which shape arrives depends on the API version configured on the
+# Stripe account, not on anything in this repo, so both are covered.
+
+
+def _payment_failed_event(invoice: dict) -> dict:
+    return {
+        "id": "evt_invoice",
+        "type": "invoice.payment_failed",
+        "data": {"object": invoice},
+    }
+
+
+def test_payment_failed_reads_the_legacy_invoice_shape(
+    db_session, subscribed_user, monkeypatch
+):
+    _with_secret(monkeypatch)
+    _stub_event(monkeypatch, _payment_failed_event({"subscription": "sub_1"}))
+
+    billing_service.handle_webhook_event(db_session, b"{}", "sig")
+
+    assert db_session.query(Subscription).one().status == "past_due"
+
+
+def test_payment_failed_reads_the_current_invoice_shape(
+    db_session, subscribed_user, monkeypatch
+):
+    _with_secret(monkeypatch)
+    _stub_event(
+        monkeypatch,
+        _payment_failed_event(
+            {"parent": {"subscription_details": {"subscription": "sub_1"}}}
+        ),
+    )
+
+    billing_service.handle_webhook_event(db_session, b"{}", "sig")
+
+    assert db_session.query(Subscription).one().status == "past_due"
+
+
+def test_payment_failed_reads_an_expanded_subscription_object(
+    db_session, subscribed_user, monkeypatch
+):
+    _with_secret(monkeypatch)
+    _stub_event(monkeypatch, _payment_failed_event({"subscription": {"id": "sub_1"}}))
+
+    billing_service.handle_webhook_event(db_session, b"{}", "sig")
+
+    assert db_session.query(Subscription).one().status == "past_due"
+
+
+def test_payment_failed_without_a_subscription_is_ignored(
+    db_session, subscribed_user, monkeypatch
+):
+    """One-off invoices carry no subscription; they must not churn anyone."""
+    _with_secret(monkeypatch)
+    _stub_event(monkeypatch, _payment_failed_event({"id": "in_oneoff"}))
+
+    billing_service.handle_webhook_event(db_session, b"{}", "sig")
+
+    assert db_session.query(Subscription).one().status == "active"
+
+
+def test_period_end_is_read_from_subscription_items(
+    db_session, subscribed_user, monkeypatch
+):
+    _with_secret(monkeypatch)
+    period_end = int(datetime(2027, 3, 1, tzinfo=UTC).timestamp())
+    _stub_event(
+        monkeypatch,
+        {
+            "id": "evt_items",
+            "type": "customer.subscription.updated",
+            "data": {
+                "object": {
+                    "id": "sub_1",
+                    "status": "active",
+                    "items": {"data": [{"current_period_end": period_end}]},
+                }
+            },
+        },
+    )
+
+    billing_service.handle_webhook_event(db_session, b"{}", "sig")
+
+    subscription = db_session.query(Subscription).one()
+    db_session.refresh(subscription)
+    assert subscription.current_period_end is not None
+    assert subscription.current_period_end.year == 2027

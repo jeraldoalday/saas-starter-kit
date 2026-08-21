@@ -204,7 +204,7 @@ def _apply_subscription_update(
     else:
         subscription.status = subscription_obj.get("status", subscription.status)
 
-    period_end = subscription_obj.get("current_period_end")
+    period_end = _period_end_from_subscription(subscription_obj)
     if period_end:
         subscription.current_period_end = datetime.fromtimestamp(period_end, tz=UTC)
     db.commit()
@@ -212,9 +212,55 @@ def _apply_subscription_update(
     _record_status_change(db, subscription, previous_status)
 
 
+def _subscription_id_from_invoice(invoice_obj: dict) -> str | None:
+    """Find the subscription an invoice belongs to, across API versions.
+
+    Stripe's 2025-03-31 ("basil") version removed the top-level
+    `invoice.subscription` field and moved the reference under
+    `invoice.parent.subscription_details.subscription`. Both shapes are read
+    here rather than pinning an API version, because the version that
+    arrives is whatever the Stripe account is configured for — a dashboard
+    upgrade nobody in this repo makes would otherwise silently stop
+    `invoice.payment_failed` from ever marking a subscription past_due.
+    """
+    legacy = invoice_obj.get("subscription")
+    if isinstance(legacy, str) and legacy:
+        return legacy
+    # Expanded objects arrive as dicts rather than ids.
+    if isinstance(legacy, dict) and legacy.get("id"):
+        return str(legacy["id"])
+
+    parent = invoice_obj.get("parent") or {}
+    details = parent.get("subscription_details") or {}
+    current = details.get("subscription")
+    if isinstance(current, dict):
+        current = current.get("id")
+    return str(current) if current else None
+
+
+def _period_end_from_subscription(subscription_obj: dict) -> int | None:
+    """Read the current period end, across API versions.
+
+    The same Stripe version moved `current_period_end` off the subscription
+    and onto each subscription item. A single-plan subscription has exactly
+    one item, so the first item's period end is the subscription's.
+    """
+    period_end = subscription_obj.get("current_period_end")
+    if period_end:
+        return int(period_end)
+
+    items = (subscription_obj.get("items") or {}).get("data") or []
+    for item in items:
+        item_end = item.get("current_period_end")
+        if item_end:
+            return int(item_end)
+    return None
+
+
 def _apply_payment_failed(db: Session, invoice_obj: dict) -> None:
-    stripe_subscription_id = invoice_obj.get("subscription")
+    stripe_subscription_id = _subscription_id_from_invoice(invoice_obj)
     if not stripe_subscription_id:
+        logger.warning("invoice.payment_failed carried no subscription reference")
         return
 
     subscription = (
