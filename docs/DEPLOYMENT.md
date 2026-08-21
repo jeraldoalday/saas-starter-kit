@@ -13,7 +13,7 @@ The decision was between Fly.io, Render and AWS ECS. What settled it:
   off it later means pointing a different runner at the same images.
 - **Postgres is one command away** (`fly postgres create`) and speaks plain
   `DATABASE_URL`, which is what `Settings` already reads.
-- **Scheduled work has a home.** `prune-usage-events` needs to run on a
+- **Scheduled work has a home.** The retention prunes need to run on a
   timer; `fly machine run --schedule` covers it without a second service.
 - **ECS is the wrong shape for day one.** It is the better answer once
   there's a VPC, an ALB and IAM roles to manage, and a distraction before
@@ -151,16 +151,20 @@ fly machine run --app saas-backend \
   --command "python -m app.scripts.prune_usage_events"
 ```
 
-Revoked API keys need the same treatment, and the two can share a machine:
+Revoked API keys and dead sign-in sessions need the same treatment, and all
+three can share one machine:
 
 ```bash
 fly machine run --app saas-backend \
   --schedule daily \
-  --command "sh -c 'python -m app.scripts.prune_usage_events && python -m app.scripts.prune_api_keys'"
+  --command "sh -c 'python -m app.scripts.prune_usage_events && python -m app.scripts.prune_api_keys && python -m app.scripts.prune_sessions'"
 ```
 
-Check what either would remove first with
-`fly ssh console --app saas-backend -C "python -m app.scripts.prune_usage_events --dry-run"`.
+`prune_sessions` also clears spent email-verification and password-reset
+tokens, which accumulate one per signup and one per reset request.
+
+Check what any of them would remove first with `--dry-run`, e.g.
+`fly ssh console --app saas-backend -C "python -m app.scripts.prune_sessions --dry-run"`.
 
 ## 6. On-call alert routing
 

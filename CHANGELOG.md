@@ -32,6 +32,30 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   SHA-256 digest — the raw secret is returned exactly once, by the call that
   created it. Key management itself still requires a session JWT, so a
   leaked key cannot mint more of itself.
+- **Revocable sign-in sessions.** Every refresh token now has a row in
+  `auth_sessions`, so a session can be ended. `GET /api/v1/sessions` lists
+  the devices signed in to an account, `DELETE /api/v1/sessions/{id}` ends
+  one, and `POST /api/v1/sessions/revoke-all` ends all of them — optionally
+  sparing the caller's own, for "sign out my other devices". Managed from
+  `/dashboard/sessions`. Session management requires a session JWT, so a
+  leaked API key cannot sign the owner out and keep the account.
+- **Refresh tokens rotate.** `POST /api/v1/auth/refresh` now returns a new
+  refresh token and retires the one presented, so a token captured in
+  transit stops working the next time the real client refreshes rather than
+  lasting the rest of its lifetime.
+- **A logout endpoint.** `POST /api/v1/auth/logout` revokes the session
+  behind a refresh token. It takes the refresh token rather than an access
+  token, because that is the credential being revoked and it is what a
+  client still holds once its access token has lapsed. It always reports
+  success, so it cannot be used to test captured tokens for validity.
+- **Retention prune for dead sessions.** `make prune-sessions` clears
+  revoked and expired session rows past `SESSION_RETENTION_DAYS`, and spent
+  one-time tokens along with them. `make prune` runs all three retention
+  jobs.
+- **Admin overview.** `GET /api/v1/admin/overview` reports deployment-wide
+  counts — accounts by state, API keys, sessions live and total,
+  subscriptions by status — for answering "is anything obviously wrong"
+  without paging through lists.
 - **On-call alert routing.** Readiness failures, rejected or unconfigured
   Stripe webhook signatures, and subscriptions falling to `past_due` raise
   alerts through a router that applies a severity floor and per-key
@@ -69,6 +93,20 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Resetting a password now signs every device out.** A reset changed the
+  password and nothing else, so anyone already holding a refresh token —
+  which is the reason people reset a password — kept minting access tokens
+  straight through it, for up to `REFRESH_TOKEN_EXPIRE_DAYS`. The account
+  owner had no way to tell and no action that would have helped. Signing
+  back in with the new password works immediately.
+- **Signing out ends the session on the server.** The SPA cleared its own
+  `localStorage` and stopped there; the refresh token stayed valid for
+  weeks, so "Log out" ended the session in that tab and nowhere else.
+  Tokens are still cleared locally first, so signing out works on a flaky
+  connection.
+- **Spent one-time tokens are pruned.** Email verification and password
+  reset tokens were deleted only once expired, so a redeemed token sat in
+  the table for the rest of its lifetime — a day per signup.
 - **Batched analytics ingest no longer over-reports.** A failure partway
   through a batch rolls the whole transaction back, but the response still
   counted the rows queued before it — so a failing ingest path looked
@@ -111,14 +149,26 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Run `alembic upgrade head`. Migration `0005` creates `usage_events`;
   migration `0006` folds existing user emails to lowercase; migration `0007`
-  creates `api_keys`.
+  creates `api_keys`; migration `0008` creates `auth_sessions`.
+- **Everyone is signed out by this upgrade.** Refresh tokens issued before
+  migration `0008` have no session row, and `POST /api/v1/auth/refresh` now
+  requires one, so outstanding refresh tokens stop working and users log in
+  again once. Access tokens already in flight keep working until they
+  expire. There is no way to backfill rows for tokens that were never
+  recorded, and the alternative — honouring any correctly signed token —
+  would leave exactly the unrevocable tokens this release exists to remove.
+- Clients that store the refresh token must save the new one returned by
+  `POST /api/v1/auth/refresh`. Refresh previously echoed the same token
+  back, so a client that ignores the field kept working; it will now be
+  signed out at the following refresh. The bundled SPA already stores it.
 - **Migration 0006 will refuse to run** if two accounts hold addresses that
   differ only by case, and will name them. Merge or delete the duplicates,
   then re-run it. This is deliberate: folding them regardless would collide
   with the unique index and abort with an error identifying nobody.
 - New optional settings, all with working defaults: `ANALYTICS_ENABLED`,
   `ANALYTICS_RETENTION_DAYS`, `ANALYTICS_MAX_BATCH_SIZE`,
-  `API_KEY_RETENTION_DAYS`, `ALERT_BACKEND`, `ALERT_WEBHOOK_URL`,
+  `API_KEY_RETENTION_DAYS`, `SESSION_RETENTION_DAYS`, `ALERT_BACKEND`,
+  `ALERT_WEBHOOK_URL`,
   `ALERT_MIN_SEVERITY`, `ALERT_SUPPRESSION_SECONDS`,
   `ALERT_WEBHOOK_TIMEOUT_SECONDS`. `ALERT_BACKEND=console` is accepted as a
   synonym for `log`.
@@ -126,8 +176,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unrecognised `ALERT_BACKEND` or `ALERT_MIN_SEVERITY`, or `ALERT_BACKEND=webhook`
   with no `ALERT_WEBHOOK_URL`. Deployments that set none of them are
   unaffected: the defaults are valid.
-- Schedule `make prune-api-keys` alongside the existing usage-event prune,
-  or replace both with `make prune`.
+- Schedule `make prune-api-keys` and `make prune-sessions` alongside the
+  existing usage-event prune, or replace all three with `make prune`.
 - The `User` object returned by `GET /api/v1/users/me` is unchanged, but the
   SPA's `User` type now includes `role`, which the API has been returning
   since RBAC landed. Client code that constructs a `User` literal (tests,

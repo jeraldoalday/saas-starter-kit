@@ -63,6 +63,9 @@ this note once that happens and the box is checked.
 
 - [x] API keys for programmatic access (hashed at rest, expiring, revocable)
 - [x] Migrations exercised against a real Postgres in CI, both directions
+- [x] Revocable sign-in sessions: refresh-token rotation, a logout endpoint,
+      "sign out my other devices", and password reset ending every session
+- [x] Admin overview endpoint (accounts, credentials, subscriptions at a glance)
 
 ## Post-PRD — Maintenance mode
 - [x] Dependency update cadence (Dependabot, weekly + grouped)

@@ -14,7 +14,7 @@ isn't paying for dead weight.
 |-----------|---------------------------------------------------------|
 | Backend   | Python 3.11+, FastAPI, SQLAlchemy 2.0, Alembic, Postgres |
 | Frontend  | Node.js 20+, React 19 + Vite, React Router, TypeScript, Tailwind |
-| Auth      | JWT access/refresh tokens, bcrypt password hashing, API keys |
+| Auth      | JWT access tokens, revocable refresh sessions, bcrypt hashing, API keys |
 | Billing   | Stripe webhook + subscription model (stubbed, wired up)  |
 | Infra     | Docker Compose (Postgres + backend + nginx-served frontend) |
 | CI        | GitHub Actions (lint + test, backend and frontend)        |
@@ -25,7 +25,7 @@ isn't paying for dead weight.
 .
 ├── backend/            FastAPI service
 │   ├── app/
-│   │   ├── api/v1/      versioned routes (health, auth, users, api keys, billing)
+│   │   ├── api/v1/      versioned routes (health, auth, users, api keys, sessions, billing)
 │   │   ├── core/        settings + security (hashing, JWT)
 │   │   ├── models/      SQLAlchemy models
 │   │   ├── schemas/     Pydantic request/response schemas
@@ -39,7 +39,7 @@ isn't paying for dead weight.
 │   └── src/
 │       ├── main.tsx      mounts React and BrowserRouter
 │       ├── App.tsx       route table
-│       ├── pages/        Landing, Login, Register, Dashboard, API keys
+│       ├── pages/        Landing, Login, Register, Dashboard, API keys, Sessions
 │       ├── components/   UI primitives + feature components + ProtectedRoute
 │       ├── lib/          API client, auth/analytics helpers, types
 │       ├── hooks/        client hooks (useAuth)
@@ -172,10 +172,51 @@ when it is deleted.
 The table is append-only, so schedule the prune:
 
 ```bash
-make prune                     # both retention jobs
+make prune                     # all three retention jobs
 make prune-usage-events        # honours ANALYTICS_RETENTION_DAYS
 make prune-api-keys            # honours API_KEY_RETENTION_DAYS
+make prune-sessions            # honours SESSION_RETENTION_DAYS
 ```
+
+### Sign-in sessions
+
+Access tokens are stateless and short-lived. Refresh tokens are neither:
+they last `REFRESH_TOKEN_EXPIRE_DAYS` and are what actually keeps someone
+signed in, so each one gets a row in `auth_sessions` and can be stopped.
+
+```bash
+# The devices signed in to this account.
+curl https://api.example.com/api/v1/sessions -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# End one of them.
+curl -X DELETE https://api.example.com/api/v1/sessions/$SESSION_ID \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# End all of them, sparing this one.
+curl -X POST https://api.example.com/api/v1/sessions/revoke-all \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"keep_current_refresh_token\": \"$REFRESH_TOKEN\"}"
+```
+
+- **Refreshing rotates.** `POST /api/v1/auth/refresh` returns a *new*
+  refresh token and retires the one presented, so a token captured in a
+  proxy log stops working as soon as the real client next refreshes. A
+  client that ignores the returned token will be signed out at its following
+  refresh.
+- **Revocation is immediate**, and leaves a tombstone, so "when did this
+  device stop working?" stays answerable. `make prune-sessions` clears
+  tombstones past `SESSION_RETENTION_DAYS`.
+- **Resetting a password ends every session**, which is the point of
+  resetting it. Signing in with the new password works right away.
+- **`POST /api/v1/auth/logout`** takes the refresh token rather than an
+  access token: it is the credential being revoked, and it is what a client
+  still holds once its access token has lapsed. It always reports success,
+  so it cannot be used to test captured tokens for validity.
+- Session management needs a session JWT. Like key management, a leaked API
+  key cannot use it — otherwise a stolen key could sign the owner out of
+  every device and keep the account.
+- Only the SHA-256 digest of each refresh token is stored, so a leaked
+  database yields digests and no way to use them.
 
 ### API keys
 
