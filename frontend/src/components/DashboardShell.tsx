@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   // without it the Overview link would stay highlighted on every child page.
   { to: "/dashboard", label: "Overview", end: true },
   { to: "/dashboard/api-keys", label: "API keys", end: false },
+  { to: "/dashboard/sessions", label: "Sessions", end: false },
 ];
 
 export function DashboardShell({ user, onLogout, children }: DashboardShellProps) {
