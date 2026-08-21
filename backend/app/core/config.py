@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     # Ceiling on how many events one batched ingest call may carry.
     analytics_max_batch_size: int = 50
 
+    # How long a revoked API key's tombstone is kept. Long enough to answer
+    # "when did this stop working?" after an incident, not forever.
+    api_key_retention_days: int = 90
+
     # Operational alerting. "log" writes to the structured log at a level a
     # log-based monitor can watch; "webhook" POSTs to an incoming webhook
     # (Slack-compatible) and needs alert_webhook_url set.

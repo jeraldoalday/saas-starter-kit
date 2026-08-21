@@ -53,6 +53,16 @@ def _reset_rate_limiter():
 
 
 @pytest.fixture
+def session_factory():
+    """The test session factory, for code that opens its own session.
+
+    The operational scripts build a session from app.database.SessionLocal
+    rather than taking one as an argument, so their tests substitute this.
+    """
+    return TestingSessionLocal
+
+
+@pytest.fixture
 def db_session():
     session = TestingSessionLocal()
     try:
