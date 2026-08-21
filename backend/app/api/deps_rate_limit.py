@@ -2,25 +2,12 @@ import logging
 
 from fastapi import HTTPException, Request, status
 
+from app.api.request_info import client_ip
 from app.core.config import get_settings
 from app.core.rate_limit import rate_limiter
 
 logger = logging.getLogger("app.rate_limit")
 settings = get_settings()
-
-
-def _client_ip(request: Request) -> str:
-    """Best-effort client IP.
-
-    X-Forwarded-For is only trustworthy when a proxy you control appends to it;
-    it is client-supplied otherwise. TRUST_PROXY_HEADERS gates that, so the
-    default deployment can't be bypassed by spoofing the header.
-    """
-    if settings.trust_proxy_headers:
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 
 class RateLimit:
@@ -34,7 +21,7 @@ class RateLimit:
         if not settings.rate_limit_enabled:
             return
 
-        key = f"{request.url.path}:{_client_ip(request)}"
+        key = f"{request.url.path}:{client_ip(request)}"
         result = rate_limiter.hit(key, self.limit, self.window_seconds)
 
         if not result.allowed:
