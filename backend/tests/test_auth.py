@@ -208,3 +208,137 @@ def test_wrong_password_on_a_deactivated_account_still_reads_as_wrong_password(
     )
 
     assert response.status_code == 401
+
+
+class TestRefreshRotation:
+    """Refreshing retires the token it was given.
+
+    Rotation is what closes the window on a captured refresh token: it stops
+    working as soon as the legitimate client next refreshes, instead of
+    lasting the full REFRESH_TOKEN_EXPIRE_DAYS.
+    """
+
+    @staticmethod
+    def _login(client, email="rotate@example.com"):
+        _register(client, email=email)
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": "s3cret-password"},
+        )
+        assert response.status_code == 200
+        return response.json()["refresh_token"]
+
+    def test_refresh_returns_a_different_refresh_token(self, client):
+        original = self._login(client)
+
+        response = client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": original}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["refresh_token"] != original
+
+    def test_the_previous_refresh_token_stops_working(self, client):
+        original = self._login(client)
+        client.post("/api/v1/auth/refresh", json={"refresh_token": original})
+
+        replay = client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": original}
+        )
+
+        assert replay.status_code == 401
+
+    def test_the_rotated_token_keeps_working(self, client):
+        original = self._login(client)
+        rotated = client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": original}
+        ).json()["refresh_token"]
+
+        again = client.post("/api/v1/auth/refresh", json={"refresh_token": rotated})
+
+        assert again.status_code == 200
+
+    def test_a_signature_alone_is_not_enough(self, client, db_session):
+        """A correctly signed token with no session behind it is refused.
+
+        This is the property the whole auth_sessions table exists for: before
+        it, anything bearing a valid signature refreshed indefinitely.
+        """
+        from app.core.security import create_refresh_token
+        from app.models.user import User
+
+        _register(client, email="forged@example.com")
+        user = db_session.query(User).filter(User.email == "forged@example.com").one()
+        forged = create_refresh_token(str(user.id))
+
+        response = client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": forged}
+        )
+
+        assert response.status_code == 401
+
+
+class TestLogout:
+    @staticmethod
+    def _login(client, email="logout@example.com"):
+        _register(client, email=email)
+        return client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": "s3cret-password"},
+        ).json()["refresh_token"]
+
+    def test_logout_ends_the_session(self, client):
+        refresh_token = self._login(client)
+
+        response = client.post(
+            "/api/v1/auth/logout", json={"refresh_token": refresh_token}
+        )
+
+        assert response.status_code == 200
+        # The whole point: the token is dead afterwards.
+        assert (
+            client.post(
+                "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
+            ).status_code
+            == 401
+        )
+
+    def test_logout_is_idempotent(self, client):
+        refresh_token = self._login(client)
+        client.post("/api/v1/auth/logout", json={"refresh_token": refresh_token})
+
+        again = client.post(
+            "/api/v1/auth/logout", json={"refresh_token": refresh_token}
+        )
+
+        assert again.status_code == 200
+
+    def test_logout_does_not_reveal_whether_a_token_was_real(self, client):
+        real = self._login(client)
+
+        known = client.post("/api/v1/auth/logout", json={"refresh_token": real})
+        unknown = client.post(
+            "/api/v1/auth/logout", json={"refresh_token": "not-a-real-token"}
+        )
+
+        # Differing answers would turn this into an oracle for testing
+        # captured tokens against, from an unauthenticated endpoint.
+        assert known.status_code == unknown.status_code
+        assert known.json() == unknown.json()
+
+    def test_logout_leaves_other_sessions_alone(self, client):
+        first = self._login(client, email="two-devices@example.com")
+        second = client.post(
+            "/api/v1/auth/login",
+            json={"email": "two-devices@example.com", "password": "s3cret-password"},
+        ).json()["refresh_token"]
+
+        client.post("/api/v1/auth/logout", json={"refresh_token": first})
+
+        # Signing out the laptop must not sign out the phone.
+        assert (
+            client.post(
+                "/api/v1/auth/refresh", json={"refresh_token": second}
+            ).status_code
+            == 200
+        )
