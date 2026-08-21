@@ -35,6 +35,8 @@ class EventName(StrEnum):
     ACCOUNT_REACTIVATED = "account.reactivated"
     API_KEY_CREATED = "api_key.created"
     API_KEY_REVOKED = "api_key.revoked"
+    SESSION_REVOKED = "session.revoked"
+    SESSIONS_REVOKED_ALL = "session.revoked_all"
 
 
 class EventSource(StrEnum):
