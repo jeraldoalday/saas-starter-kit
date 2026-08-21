@@ -102,18 +102,38 @@ def record_event(
         occurred_at=occurred_at or _now(),
     )
 
-    try:
-        db.add(event)
-        if commit:
+    if commit:
+        try:
+            db.add(event)
             db.commit()
-        else:
-            db.flush()
+        except SQLAlchemyError:
+            # Analytics is best-effort: the caller's own work already
+            # succeeded, and losing one event is preferable to turning a
+            # signup into a 500.
+            logger.exception(
+                "failed to record usage event", extra={"event_name": str(name)}
+            )
+            db.rollback()
+            return None
+        return event
+
+    # commit=False means the caller is folding this event into a transaction
+    # of their own that they will commit themselves. A bare rollback here
+    # would then discard *their* uncommitted work to clean up after a failed
+    # analytics insert — precisely the outcome rule 1 of this module exists
+    # to prevent, and a silent one, since the caller is told only that the
+    # event was dropped.
+    #
+    # A SAVEPOINT scopes the undo to this insert: on failure the session
+    # rewinds to the point before the event was added and the caller's
+    # transaction survives, still open and still committable.
+    try:
+        with db.begin_nested():
+            db.add(event)
     except SQLAlchemyError:
-        # Analytics is best-effort: the caller's own work already succeeded
-        # (or is about to be committed), and losing one event is preferable
-        # to turning a signup into a 500.
-        logger.exception("failed to record usage event", extra={"event_name": str(name)})
-        db.rollback()
+        logger.exception(
+            "failed to record usage event", extra={"event_name": str(name)}
+        )
         return None
 
     return event

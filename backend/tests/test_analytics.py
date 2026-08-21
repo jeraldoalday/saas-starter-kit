@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import get_settings
+from app.core.security import hash_password
 from app.models.role import Role
 from app.models.usage_event import EventName, EventSource, UsageEvent
 from app.models.user import User
@@ -511,3 +512,64 @@ def test_record_events_reports_zero_when_the_batch_fails(db_session, monkeypatch
 
 def test_record_events_ignores_an_empty_batch(db_session):
     assert record_events(db_session, [], user=_make_user(db_session)) == 0
+
+
+class TestRecordEventTransactionSafety:
+    """record_event(commit=False) must never undo the caller's own work.
+
+    The module's first rule is that recording an event cannot break the
+    request that triggered it. With commit=True that holds trivially — the
+    caller's work is already committed. With commit=False the event joins a
+    transaction the caller still intends to commit, so cleaning up after a
+    failed insert has to stay scoped to the insert.
+    """
+
+    @staticmethod
+    def _pending_user(db_session) -> User:
+        """A caller's in-flight work: added to the session, not yet committed."""
+        user = User(
+            email="in-flight@example.com",
+            hashed_password=hash_password("s3cret-password"),
+        )
+        db_session.add(user)
+        db_session.flush()
+        return user
+
+    def test_uncommitted_event_joins_the_callers_transaction(self, db_session):
+        user = self._pending_user(db_session)
+
+        event = record_event(
+            db_session, EventName.USER_REGISTERED, user=user, commit=False
+        )
+
+        assert event is not None
+        # Not visible to anyone else until the caller commits.
+        db_session.commit()
+        assert db_session.query(UsageEvent).count() == 1
+
+    def test_a_failed_uncommitted_insert_leaves_the_caller_committable(
+        self, db_session, monkeypatch
+    ):
+        """The regression: a rollback here used to take the caller down too."""
+        user = self._pending_user(db_session)
+
+        def _explode(*_args, **_kwargs):
+            raise SQLAlchemyError("simulated insert failure")
+
+        # Fail the flush that releasing the savepoint performs.
+        monkeypatch.setattr(db_session, "flush", _explode)
+
+        assert (
+            record_event(db_session, EventName.USER_REGISTERED, user=user, commit=False)
+            is None
+        )
+
+        monkeypatch.undo()
+
+        # The caller's pending row survived the analytics failure and still
+        # commits. Before the savepoint this raised, or silently lost the user.
+        db_session.commit()
+        assert (
+            db_session.query(User).filter(User.email == "in-flight@example.com").one()
+        )
+        assert db_session.query(UsageEvent).count() == 0
