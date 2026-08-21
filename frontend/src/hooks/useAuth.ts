@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { ApiClientError } from "@/lib/api-client";
 import { flushEvents, resetAnalytics } from "@/lib/analytics";
 import { getAccessToken, fetchCurrentUser, logout as logoutRequest } from "@/lib/auth";
 import type { User } from "@/lib/types";
@@ -22,7 +23,19 @@ export function useAuth(): UseAuthResult {
     try {
       const current = await fetchCurrentUser();
       setUser(current);
-    } catch {
+    } catch (error) {
+      // A rejected token is dead: drop it, along with any events buffered
+      // against it. Leaving it in storage means every protected route makes
+      // the same doomed request, and trackEvent() keeps queueing events it
+      // can never deliver because a token is present.
+      //
+      // Only on an explicit rejection, though. A network failure is not a
+      // logout — clearing tokens on a dropped connection would sign people
+      // out for going through a tunnel.
+      if (error instanceof ApiClientError && error.status === 401) {
+        resetAnalytics();
+        logoutRequest();
+      }
       setUser(null);
     } finally {
       setLoading(false);
