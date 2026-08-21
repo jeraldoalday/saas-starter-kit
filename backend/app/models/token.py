@@ -5,6 +5,7 @@ from enum import StrEnum
 from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.timeutils import as_utc
 from app.database import Base
 
 
@@ -41,9 +42,4 @@ class OneTimeToken(Base):
 
     def is_usable(self, now: datetime | None = None) -> bool:
         now = now or datetime.now(UTC)
-        expires_at = self.expires_at
-        # SQLite hands back naive datetimes; treat them as UTC so the
-        # comparison below doesn't raise.
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=UTC)
-        return self.used_at is None and expires_at > now
+        return self.used_at is None and as_utc(self.expires_at) > now

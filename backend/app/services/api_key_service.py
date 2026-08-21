@@ -21,6 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.timeutils import as_utc
 from app.models.api_key import PREFIX_LENGTH, ApiKey
 from app.models.user import User
 
@@ -72,13 +73,6 @@ def generate_key() -> tuple[str, str, str]:
     """Mint a new secret, returning (raw_key, prefix, digest)."""
     raw_key = f"{KEY_PREFIX}{secrets.token_urlsafe(SECRET_BYTES)}"
     return raw_key, raw_key[:PREFIX_LENGTH], hash_key(raw_key)
-
-
-def _as_utc(value: datetime | None) -> datetime | None:
-    """SQLite returns naive datetimes; treat stored values as UTC."""
-    if value is None or value.tzinfo is not None:
-        return value
-    return value.replace(tzinfo=UTC)
 
 
 def active_key_count(db: Session, user: User, *, now: datetime | None = None) -> int:
@@ -219,7 +213,7 @@ def _touch_last_used(db: Session, api_key: ApiKey, now: datetime) -> None:
     Best-effort like analytics: a failed bookkeeping write is not a reason
     to reject a request that authenticated correctly.
     """
-    last_used = _as_utc(api_key.last_used_at)
+    last_used = as_utc(api_key.last_used_at)
     if last_used is not None and now - last_used < LAST_USED_RESOLUTION:
         return
 

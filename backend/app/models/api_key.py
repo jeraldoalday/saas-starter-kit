@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.timeutils import as_utc
 from app.database import Base
 
 if TYPE_CHECKING:
@@ -83,12 +84,7 @@ class ApiKey(Base):
             return True
 
         now = now or datetime.now(UTC)
-        expires_at = self.expires_at
-        # SQLite hands back naive datetimes; treat them as UTC so the
-        # comparison below doesn't raise.
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=UTC)
-        return expires_at > now
+        return as_utc(self.expires_at) > now
 
     @property
     def is_active(self) -> bool:
