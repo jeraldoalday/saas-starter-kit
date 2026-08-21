@@ -162,9 +162,12 @@ fly machine run --app saas-backend \
 Check what either would remove first with
 `fly ssh console --app saas-backend -C "python -m app.scripts.prune_usage_events --dry-run"`.
 
-## 6. Alert routing
+## 6. On-call alert routing
 
-Decide where alerts go before the first incident, not during it:
+Decide where alerts go before the first incident, not during it. The
+webhook transport is vendor-agnostic — a plain JSON POST, which is what a
+Slack incoming webhook renders directly and what PagerDuty's and Opsgenie's
+generic webhook intakes both accept as-is:
 
 ```bash
 fly secrets set --app saas-backend \
@@ -179,16 +182,30 @@ pick up. What is not valid is a typo: the app refuses to boot on an
 unrecognised backend or severity, or on `webhook` with no URL, rather than
 starting up and delivering nothing.
 
-Confirm the wiring end to end, as an owner. This sends a real notification:
+The app raises its own alerts from the request path (readiness, Stripe
+signatures, dunning). Schedule the watcher as well — an instance too
+unhealthy to serve a request is also too unhealthy to report that it isn't:
+
+```bash
+fly machine run --app saas-backend \
+  --schedule 5m \
+  --command "python -m app.scripts.check_health_and_alert"
+```
+
+Confirm the routing reaches the paging tool before relying on it, either
+way round. Both send a real notification:
 
 ```bash
 curl -X POST https://api.example.com/api/v1/admin/alerts/test \
   -H "Authorization: Bearer $OWNER_ACCESS_TOKEN" \
   -H "Content-Type: application/json" -d '{}'
+
+fly ssh console --app saas-backend \
+  -C "python -m app.scripts.check_health_and_alert --always-alert"
 ```
 
-The response names the transport that handled it, so "nothing arrived"
-starts from knowing whether the webhook was configured at all.
+The endpoint's response names the transport that handled it, so "nothing
+arrived" starts from knowing whether the webhook was configured at all.
 
 ## Staging
 

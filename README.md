@@ -268,6 +268,10 @@ tested end to end (the checklist is written — see
 [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)) and a PRD finalized against what
 actually shipped.
 
+[docs/PRD.md](./docs/PRD.md) is the product requirements doc written
+against what actually shipped — scope, explicit non-goals, and the two
+items still open at ship time.
+
 ## License
 
 See [LICENSE.md](./LICENSE.md) — proprietary placeholder, replace before

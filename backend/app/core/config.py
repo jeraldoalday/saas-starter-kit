@@ -18,7 +18,9 @@ MIN_SECRET_KEY_LENGTH = 32
 # Kept as plain strings rather than imported from app.services.alerts: that
 # package's factory reads settings, so importing it here would close a cycle.
 # tests/test_alerts.py asserts these stay in step with the Severity enum.
-ALERT_BACKENDS = ("log", "webhook")
+# "console" is a synonym for "log": the transport writes to the structured
+# log either way, and both spellings have shipped.
+ALERT_BACKENDS = ("log", "console", "webhook")
 ALERT_SEVERITIES = ("info", "warning", "critical")
 
 
@@ -85,9 +87,11 @@ class Settings(BaseSettings):
     # "when did this stop working?" after an incident, not forever.
     api_key_retention_days: int = 90
 
-    # Operational alerting. "log" writes to the structured log at a level a
-    # log-based monitor can watch; "webhook" POSTs to an incoming webhook
-    # (Slack-compatible) and needs alert_webhook_url set.
+    # Operational alerting. "log" (or its synonym "console") writes to the
+    # structured log at a level a log-based monitor can watch; "webhook"
+    # POSTs to an incoming webhook — a plain JSON body, which Slack renders
+    # directly and PagerDuty's and Opsgenie's generic intakes accept as-is —
+    # and needs alert_webhook_url set.
     alert_backend: str = "log"
     alert_webhook_url: str = ""
     # Alerts below this severity are dropped: info/warning/critical.
@@ -98,7 +102,7 @@ class Settings(BaseSettings):
     alert_suppression_seconds: int = 300
     # Ceiling on how long a wedged webhook endpoint can hold the thread that
     # raised the alert.
-    alert_timeout_seconds: float = 5.0
+    alert_webhook_timeout_seconds: float = 5.0
 
     # Empty disables error tracking entirely (the default for local dev).
     sentry_dsn: str = ""

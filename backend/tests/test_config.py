@@ -75,6 +75,11 @@ def test_alert_defaults_are_valid():
     assert settings.alert_min_severity == "warning"
 
 
+def test_console_is_accepted_as_a_synonym_for_log():
+    """Both spellings have shipped; a deployment setting either must boot."""
+    assert Settings(alert_backend="console").alert_backend == "console"
+
+
 def test_an_unknown_alert_backend_is_rejected():
     """It would otherwise fall through to the logging transport, so a typo in
     ALERT_BACKEND reads as "configured" and pages nobody."""

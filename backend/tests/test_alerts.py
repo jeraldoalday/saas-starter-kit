@@ -221,6 +221,16 @@ def test_a_non_2xx_response_is_not_a_delivery(monkeypatch):
 # --- configuration --------------------------------------------------------
 
 
+def test_the_console_backend_resolves_to_the_log_transport(monkeypatch):
+    """The other spelling of the same transport, kept working for anyone who
+    configured it before the two alerting modules were consolidated."""
+    alert_factory.get_alert_sender.cache_clear()
+    monkeypatch.setattr(alert_factory.get_settings(), "alert_backend", "console")
+
+    assert isinstance(alert_factory.get_alert_sender(), LoggingAlertSender)
+    alert_factory.get_alert_sender.cache_clear()
+
+
 def test_the_default_transport_is_the_log(monkeypatch):
     alert_factory.get_alert_sender.cache_clear()
     monkeypatch.setattr(alert_factory.get_settings(), "alert_backend", "log")

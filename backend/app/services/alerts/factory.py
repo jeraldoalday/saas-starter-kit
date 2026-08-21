@@ -19,7 +19,7 @@ def get_alert_sender() -> AlertSender:
     if settings.alert_backend == "webhook" and settings.alert_webhook_url:
         return WebhookAlertSender(
             settings.alert_webhook_url,
-            timeout_seconds=settings.alert_timeout_seconds,
+            timeout_seconds=settings.alert_webhook_timeout_seconds,
             environment=settings.environment,
         )
 

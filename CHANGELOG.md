@@ -38,7 +38,10 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   suppression, delivered to the structured log (default) or to a
   Slack-compatible webhook. `POST /api/v1/admin/alerts/test` (owner-only)
   pushes a real alert through the real path, so the configuration is
-  verifiable before the incident that needs it.
+  verifiable before the incident that needs it, and
+  `python -m app.scripts.check_health_and_alert` watches the database from
+  outside the app — an instance that is too unhealthy to run its own
+  readiness check is also too unhealthy to report it.
 - **API keys appear in the data export.** A data-access request returns key
   metadata — name, prefix, created, last used, expiry, revocation — and never
   the digest, which is a credential rather than user data.
@@ -116,7 +119,9 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - New optional settings, all with working defaults: `ANALYTICS_ENABLED`,
   `ANALYTICS_RETENTION_DAYS`, `ANALYTICS_MAX_BATCH_SIZE`,
   `API_KEY_RETENTION_DAYS`, `ALERT_BACKEND`, `ALERT_WEBHOOK_URL`,
-  `ALERT_MIN_SEVERITY`, `ALERT_SUPPRESSION_SECONDS`, `ALERT_TIMEOUT_SECONDS`.
+  `ALERT_MIN_SEVERITY`, `ALERT_SUPPRESSION_SECONDS`,
+  `ALERT_WEBHOOK_TIMEOUT_SECONDS`. `ALERT_BACKEND=console` is accepted as a
+  synonym for `log`.
 - **The app now refuses to boot on invalid alert settings** — an
   unrecognised `ALERT_BACKEND` or `ALERT_MIN_SEVERITY`, or `ALERT_BACKEND=webhook`
   with no `ALERT_WEBHOOK_URL`. Deployments that set none of them are
