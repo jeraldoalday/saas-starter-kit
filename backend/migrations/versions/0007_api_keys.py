@@ -34,16 +34,19 @@ def upgrade() -> None:
         ),
         sa.Column("name", sa.String(64), nullable=False),
         sa.Column("prefix", sa.String(12), nullable=False),
-        # Unique: the digest is the lookup key on every authenticated API
-        # call, so it has to be indexed, and two rows sharing one would mean
-        # two accounts answering to the same secret.
-        sa.Column("token_hash", sa.String(64), nullable=False, unique=True),
+        # Uniqueness is carried by the index below rather than by a column
+        # constraint: Postgres would otherwise build one index for the
+        # constraint and a second identical one for the explicit index.
+        sa.Column("token_hash", sa.String(64), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_index("ix_api_keys_user_id", "api_keys", ["user_id"])
+    # Unique: the digest is the lookup key on every authenticated API call,
+    # so it has to be indexed, and two rows sharing one would mean two
+    # accounts answering to the same secret.
     op.create_index("ix_api_keys_token_hash", "api_keys", ["token_hash"], unique=True)
     op.create_index("ix_api_keys_user_id_created_at", "api_keys", ["user_id", "created_at"])
 
