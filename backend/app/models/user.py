@@ -9,6 +9,7 @@ from app.database import Base
 from app.models.role import Role
 
 if TYPE_CHECKING:
+    from app.models.api_key import ApiKey
     from app.models.subscription import Subscription
 
 
@@ -30,4 +31,10 @@ class User(Base):
 
     subscription: Mapped["Subscription | None"] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    # Cascade so deleting an account takes its credentials with it; without
+    # it the rows would outlive the user and their key would keep working
+    # right up until the foreign key complained.
+    api_keys: Mapped[list["ApiKey"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
