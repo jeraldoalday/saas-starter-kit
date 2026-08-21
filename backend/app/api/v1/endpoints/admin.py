@@ -1,19 +1,67 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import require_admin, require_owner
+from app.models.auth_session import AuthSession
 from app.models.role import Role, rank
+from app.models.subscription import Subscription
 from app.models.usage_event import EventName
 from app.models.user import User
-from app.schemas.admin import AlertTestRequest, AlertTestResponse
+from app.schemas.admin import AdminOverview, AlertTestRequest, AlertTestResponse
 from app.schemas.user import UserRead, UserRoleUpdate, UserStatusUpdate
 from app.services.alerts import Severity, get_alert_router, notify
 from app.services.analytics_service import record_event
+from app.services.api_key_service import count_keys
+from app.services.session_service import count_sessions
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.get("/overview", response_model=AdminOverview)
+def overview(
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminOverview:
+    """Deployment-wide counts, for the question "is anything obviously wrong".
+
+    Every figure is a COUNT in the database rather than rows loaded and
+    counted in Python — this is the one endpoint whose cost scales with the
+    whole deployment rather than with one account, so it must not be the
+    thing that falls over first.
+
+    Active sessions are the exception, and are counted in Python: liveness
+    folds in expiry, which the model already knows how to compare including
+    the naive-datetime handling SQLite forces.
+    """
+
+    def _count(model, *conditions) -> int:
+        stmt = select(func.count()).select_from(model)
+        for condition in conditions:
+            stmt = stmt.where(condition)
+        return int(db.execute(stmt).scalar_one())
+
+    by_status = {
+        status_name: int(count)
+        for status_name, count in db.execute(
+            select(Subscription.status, func.count()).group_by(Subscription.status)
+        ).all()
+    }
+
+    sessions = db.execute(select(AuthSession)).scalars().all()
+
+    return AdminOverview(
+        total_users=_count(User),
+        active_users=_count(User, User.is_active.is_(True)),
+        verified_users=_count(User, User.is_verified.is_(True)),
+        total_api_keys=count_keys(db),
+        total_sessions=count_sessions(db),
+        active_sessions=sum(1 for session in sessions if session.is_active),
+        subscriptions_by_status=by_status,
+    )
 
 
 @router.get("/users", response_model=list[UserRead])

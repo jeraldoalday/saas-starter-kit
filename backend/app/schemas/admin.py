@@ -19,3 +19,29 @@ class AlertTestResponse(BaseModel):
     # Which transport handled it, so the answer to "nothing arrived" starts
     # with knowing whether the webhook was configured at all.
     backend: str
+
+
+class AdminOverview(BaseModel):
+    """Counts an operator wants before they want a dashboard.
+
+    Deliberately counts rather than lists: the question this answers is "is
+    anything obviously wrong right now", and every figure here is one an
+    operator can sanity-check against what they expect. Anything needing a
+    breakdown already has its own endpoint — /admin/users for accounts,
+    /analytics/summary for behaviour over a window.
+    """
+
+    total_users: int
+    active_users: int
+    verified_users: int
+
+    # Credentials that could reach the API this second. The active/total
+    # split is the useful part: a large gap means a lot of revoked or
+    # expired rows waiting on the retention prune.
+    total_api_keys: int
+    total_sessions: int
+    active_sessions: int
+
+    # Keyed by SubscriptionStatus. Absent statuses mean zero rather than
+    # being reported as zero, so a status added later needs no change here.
+    subscriptions_by_status: dict[str, int]
