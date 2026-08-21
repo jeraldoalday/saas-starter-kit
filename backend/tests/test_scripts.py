@@ -1,10 +1,11 @@
-"""The operational CLIs: retention prunes for events and revoked keys.
+"""The operational CLIs: retention prunes for events, keys and sessions.
 
 These run unattended on a schedule, which is exactly why they are worth
 testing — nobody reads the output of a cron job that worked, and a prune
 that silently deletes the wrong rows looks identical to one that worked.
 """
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -130,3 +131,103 @@ def test_key_prune_rejects_a_nonsensical_window(db_session, user, capsys):
     assert prune_api_keys.main(["--days", "-5"]) == 1
 
     assert "at least 1 day" in capsys.readouterr().err
+
+
+class TestPruneSessions:
+    """The retention job for dead sign-in sessions."""
+
+    @staticmethod
+    def _user(db_session):
+        from app.core.security import hash_password
+        from app.models.user import User
+
+        account = User(
+            email=f"prune-{uuid.uuid4().hex}@example.com",
+            hashed_password=hash_password("s3cret-password"),
+        )
+        db_session.add(account)
+        db_session.commit()
+        db_session.refresh(account)
+        return account
+
+    @staticmethod
+    def _session_row(db_session, user, *, revoked_days_ago=None, expired_days_ago=None):
+        from app.models.auth_session import AuthSession
+
+        now = datetime.now(UTC)
+        row = AuthSession(
+            user_id=user.id,
+            token_hash=uuid.uuid4().hex + uuid.uuid4().hex,
+            created_at=now - timedelta(days=200),
+            last_used_at=now - timedelta(days=200),
+            expires_at=(
+                now - timedelta(days=expired_days_ago)
+                if expired_days_ago is not None
+                else now + timedelta(days=14)
+            ),
+            revoked_at=(
+                now - timedelta(days=revoked_days_ago)
+                if revoked_days_ago is not None
+                else None
+            ),
+        )
+        db_session.add(row)
+        db_session.commit()
+        return row
+
+    def test_dry_run_reports_without_deleting(
+        self, db_session, session_factory, monkeypatch, capsys
+    ):
+        from app.models.auth_session import AuthSession
+        from app.scripts import prune_sessions
+
+        monkeypatch.setattr(prune_sessions, "SessionLocal", session_factory)
+        user = self._user(db_session)
+        self._session_row(db_session, user, revoked_days_ago=90)
+
+        assert prune_sessions.main(["--dry-run", "--days", "30"]) == 0
+
+        assert "1 dead session(s)" in capsys.readouterr().out
+        assert db_session.query(AuthSession).count() == 1
+
+    def test_deletes_long_dead_sessions(
+        self, db_session, session_factory, monkeypatch, capsys
+    ):
+        from app.models.auth_session import AuthSession
+        from app.scripts import prune_sessions
+
+        monkeypatch.setattr(prune_sessions, "SessionLocal", session_factory)
+        user = self._user(db_session)
+        self._session_row(db_session, user, revoked_days_ago=90)
+        self._session_row(db_session, user, expired_days_ago=90)
+        live = self._session_row(db_session, user)
+
+        assert prune_sessions.main(["--days", "30"]) == 0
+
+        assert "Deleted 2 dead session(s)" in capsys.readouterr().out
+        remaining = db_session.query(AuthSession).all()
+        assert [row.id for row in remaining] == [live.id]
+
+    def test_also_clears_spent_one_time_tokens(
+        self, db_session, session_factory, monkeypatch, capsys
+    ):
+        from app.models.token import OneTimeToken, TokenPurpose
+        from app.scripts import prune_sessions
+        from app.services.token_service import consume_token, issue_token
+
+        monkeypatch.setattr(prune_sessions, "SessionLocal", session_factory)
+        user = self._user(db_session)
+        raw = issue_token(db_session, user, TokenPurpose.EMAIL_VERIFICATION)
+        consume_token(db_session, raw, TokenPurpose.EMAIL_VERIFICATION)
+
+        assert prune_sessions.main(["--days", "30"]) == 0
+
+        assert "1 spent or expired one-time token(s)" in capsys.readouterr().out
+        assert db_session.query(OneTimeToken).count() == 0
+
+    def test_rejects_a_nonsensical_window(self, session_factory, monkeypatch):
+        from app.scripts import prune_sessions
+
+        monkeypatch.setattr(prune_sessions, "SessionLocal", session_factory)
+
+        assert prune_sessions.main(["--days", "0"]) == 1

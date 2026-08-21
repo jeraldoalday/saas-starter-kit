@@ -1,4 +1,4 @@
-.PHONY: dev-backend dev-frontend test test-backend test-frontend lint migrate up down sync-stripe-catalog prune-usage-events prune-api-keys prune check-health-and-alert
+.PHONY: dev-backend dev-frontend test test-backend test-frontend lint migrate up down sync-stripe-catalog prune-usage-events prune-api-keys prune-sessions prune check-health-and-alert
 
 dev-backend:
 	cd backend && uvicorn app.main:app --reload
@@ -30,8 +30,11 @@ prune-usage-events:
 prune-api-keys:
 	cd backend && python -m app.scripts.prune_api_keys
 
+prune-sessions:
+	cd backend && python -m app.scripts.prune_sessions
+
 # Everything the scheduled retention job should run.
-prune: prune-usage-events prune-api-keys
+prune: prune-usage-events prune-api-keys prune-sessions
 
 check-health-and-alert:
 	cd backend && python -m app.scripts.check_health_and_alert

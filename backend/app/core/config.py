@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     # "when did this stop working?" after an incident, not forever.
     api_key_retention_days: int = 90
 
+    # How long a dead auth session's row is kept, counted from the moment it
+    # died. Shorter than the API key window: a session list is something the
+    # owner reads to recognise their own devices, and a year of stale rows
+    # makes the live ones harder to find.
+    session_retention_days: int = 30
+
     # Operational alerting. "log" (or its synonym "console") writes to the
     # structured log at a level a log-based monitor can watch; "webhook"
     # POSTs to an incoming webhook — a plain JSON body, which Slack renders
