@@ -13,6 +13,10 @@ export function getAccessToken(): string | null {
   return localStorage.getItem(ACCESS_TOKEN_KEY);
 }
 
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
 export function clearTokens(): void {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
@@ -43,6 +47,30 @@ export function fetchCurrentUser(): Promise<User> {
   return apiRequest<User>("/users/me", { token });
 }
 
-export function logout(): void {
+/**
+ * End the session, on the server as well as in this browser.
+ *
+ * Local tokens are cleared first and unconditionally, before the request is
+ * even attempted. Signing out has to work on a flaky connection: if the call
+ * failed and we had cleared nothing, the user would be left looking at a
+ * signed-in dashboard having just pressed "Log out".
+ *
+ * The request itself is best-effort for the same reason. Its value is that
+ * the refresh token stops working for anyone who captured it — worth doing,
+ * not worth blocking the UI on, and the token expires on its own regardless.
+ */
+export async function logout(): Promise<void> {
+  const refreshToken = getRefreshToken();
   clearTokens();
+
+  if (refreshToken === null) return;
+
+  try {
+    await apiRequest<{ detail: string }>("/auth/logout", {
+      method: "POST",
+      body: { refresh_token: refreshToken },
+    });
+  } catch {
+    // Already signed out locally; nothing here is worth surfacing.
+  }
 }

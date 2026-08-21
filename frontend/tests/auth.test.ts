@@ -126,3 +126,41 @@ describe("fetchCurrentUser", () => {
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer access-1");
   });
 });
+
+describe("logout", () => {
+  it("ends the session on the server, not just in this browser", async () => {
+    storeTokens(tokens);
+    const fetchMock = mockFetch({ detail: "Signed out" });
+
+    await logout();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/auth/logout");
+    // The refresh token is the credential being revoked, so it has to be
+    // what goes up — an access token would leave it working for weeks.
+    expect(JSON.parse(init.body)).toEqual({ refresh_token: "refresh-1" });
+  });
+
+  it("clears local tokens even when the request fails", async () => {
+    storeTokens(tokens);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("network down"))
+    );
+
+    await logout();
+
+    // Pressing "Log out" on a flaky connection must not leave someone
+    // looking at a signed-in dashboard.
+    expect(getAccessToken()).toBeNull();
+    expect(localStorage.getItem("saas.refresh_token")).toBeNull();
+  });
+
+  it("skips the request when there is nothing to revoke", async () => {
+    const fetchMock = mockFetch({ detail: "Signed out" });
+
+    await logout();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

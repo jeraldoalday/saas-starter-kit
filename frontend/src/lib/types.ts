@@ -25,6 +25,19 @@ export interface CreatedApiKey extends ApiKey {
   key: string;
 }
 
+/** One signed-in device, as the account's own session list shows it. */
+export interface AuthSession {
+  id: string;
+  created_at: string;
+  last_used_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+  /** Self-reported and unverified; only ever used to help someone recognise a device. */
+  user_agent: string | null;
+  ip_address: string | null;
+  is_active: boolean;
+}
+
 export interface TokenPair {
   access_token: string;
   refresh_token: string;
