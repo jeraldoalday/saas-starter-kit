@@ -25,6 +25,23 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **API keys.** Long-lived credentials for calling the API without a browser
+  session: `POST/GET /api/v1/api-keys` and `DELETE /api/v1/api-keys/{id}`,
+  managed from `/dashboard/api-keys`. Keys authenticate through `X-API-Key`
+  or as a bearer token, carry an optional expiry, and are stored as a
+  SHA-256 digest — the raw secret is returned exactly once, by the call that
+  created it. Key management itself still requires a session JWT, so a
+  leaked key cannot mint more of itself.
+- **On-call alert routing.** Readiness failures, rejected or unconfigured
+  Stripe webhook signatures, and subscriptions falling to `past_due` raise
+  alerts through a router that applies a severity floor and per-key
+  suppression, delivered to the structured log (default) or to a
+  Slack-compatible webhook. `POST /api/v1/admin/alerts/test` (owner-only)
+  pushes a real alert through the real path, so the configuration is
+  verifiable before the incident that needs it.
+- **Retention prune for revoked API keys.** `make prune-api-keys` clears
+  tombstones past `API_KEY_RETENTION_DAYS`; `make prune` runs both retention
+  jobs.
 - **Usage analytics.** Product events are recorded in an append-only
   `usage_events` table: signup, verification, login, checkout, subscription
   activation and churn are captured server-side, and the SPA can record its
@@ -46,6 +63,28 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Batched analytics ingest no longer over-reports.** A failure partway
+  through a batch rolls the whole transaction back, but the response still
+  counted the rows queued before it — so a failing ingest path looked
+  healthy while the events table stayed empty.
+- **Stripe invoices are read in both API-version shapes.** Stripe's
+  2025-03-31 version moved `invoice.subscription` under
+  `invoice.parent.subscription_details` and `current_period_end` onto
+  subscription items. On an account upgraded in the Stripe dashboard,
+  `invoice.payment_failed` had stopped marking anyone `past_due` and period
+  ends had stopped syncing, silently.
+- **Rate-limit counters are pruned against their own window.** The lazy
+  prune judged every counter by the window of whichever request triggered
+  it, so login traffic (60s) could clear a caller's half-spent
+  password-reset budget (300s) and hand them a fresh allowance.
+- **Alert configuration that could never deliver is rejected at boot.** An
+  unknown `ALERT_BACKEND` fell through to the log transport and an unknown
+  `ALERT_MIN_SEVERITY` outranked every real severity, so either typo paged
+  nobody while reading as configured.
+- **A rejected session token is dropped by the SPA.** A 401 left the token
+  in `localStorage`, so every protected route repeated the same doomed
+  request and the analytics buffer kept queueing events that could never be
+  sent. Cleared on an explicit 401 only — a network failure is not a logout.
 - **Email addresses are treated case-insensitively.** Registering as
   `Ada@example.com` and `ada@example.com` previously created two accounts on
   one inbox, and login only matched the exact spelling used at signup.
@@ -65,13 +104,26 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Upgrade notes
 
 - Run `alembic upgrade head`. Migration `0005` creates `usage_events`;
-  migration `0006` folds existing user emails to lowercase.
+  migration `0006` folds existing user emails to lowercase; migration `0007`
+  creates `api_keys`.
 - **Migration 0006 will refuse to run** if two accounts hold addresses that
   differ only by case, and will name them. Merge or delete the duplicates,
   then re-run it. This is deliberate: folding them regardless would collide
   with the unique index and abort with an error identifying nobody.
 - New optional settings, all with working defaults: `ANALYTICS_ENABLED`,
-  `ANALYTICS_RETENTION_DAYS`, `ANALYTICS_MAX_BATCH_SIZE`.
+  `ANALYTICS_RETENTION_DAYS`, `ANALYTICS_MAX_BATCH_SIZE`,
+  `API_KEY_RETENTION_DAYS`, `ALERT_BACKEND`, `ALERT_WEBHOOK_URL`,
+  `ALERT_MIN_SEVERITY`, `ALERT_SUPPRESSION_SECONDS`, `ALERT_TIMEOUT_SECONDS`.
+- **The app now refuses to boot on invalid alert settings** — an
+  unrecognised `ALERT_BACKEND` or `ALERT_MIN_SEVERITY`, or `ALERT_BACKEND=webhook`
+  with no `ALERT_WEBHOOK_URL`. Deployments that set none of them are
+  unaffected: the defaults are valid.
+- Schedule `make prune-api-keys` alongside the existing usage-event prune,
+  or replace both with `make prune`.
+- The `User` object returned by `GET /api/v1/users/me` is unchanged, but the
+  SPA's `User` type now includes `role`, which the API has been returning
+  since RBAC landed. Client code that constructs a `User` literal (tests,
+  fixtures) needs the field added.
 - Login now answers `403` (not `401`) for a deactivated account. A client
   that treats every failed login identically needs no change; one that
   distinguishes them should surface the deactivation message.

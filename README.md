@@ -14,7 +14,7 @@ isn't paying for dead weight.
 |-----------|---------------------------------------------------------|
 | Backend   | Python 3.11+, FastAPI, SQLAlchemy 2.0, Alembic, Postgres |
 | Frontend  | Node.js 20+, React 19 + Vite, React Router, TypeScript, Tailwind |
-| Auth      | JWT access/refresh tokens, bcrypt password hashing       |
+| Auth      | JWT access/refresh tokens, bcrypt password hashing, API keys |
 | Billing   | Stripe webhook + subscription model (stubbed, wired up)  |
 | Infra     | Docker Compose (Postgres + backend + nginx-served frontend) |
 | CI        | GitHub Actions (lint + test, backend and frontend)        |
@@ -25,12 +25,12 @@ isn't paying for dead weight.
 .
 ├── backend/            FastAPI service
 │   ├── app/
-│   │   ├── api/v1/      versioned routes (health, auth, users, billing)
+│   │   ├── api/v1/      versioned routes (health, auth, users, api keys, billing)
 │   │   ├── core/        settings + security (hashing, JWT)
 │   │   ├── models/      SQLAlchemy models
 │   │   ├── schemas/     Pydantic request/response schemas
-│   │   ├── services/    business logic (auth, billing, analytics)
-│   │   └── scripts/     operational CLIs (Stripe sync, event pruning)
+│   │   ├── services/    business logic (auth, billing, analytics, alerts)
+│   │   └── scripts/     operational CLIs (Stripe sync, retention pruning)
 │   ├── migrations/      Alembic migrations
 │   └── tests/           pytest suite
 ├── frontend/           React SPA (Vite)
@@ -39,7 +39,7 @@ isn't paying for dead weight.
 │   └── src/
 │       ├── main.tsx      mounts React and BrowserRouter
 │       ├── App.tsx       route table
-│       ├── pages/        Landing, Login, Register, Dashboard
+│       ├── pages/        Landing, Login, Register, Dashboard, API keys
 │       ├── components/   UI primitives + feature components + ProtectedRoute
 │       ├── lib/          API client, auth/analytics helpers, types
 │       ├── hooks/        client hooks (useAuth)
@@ -172,7 +172,65 @@ when it is deleted.
 The table is append-only, so schedule the prune:
 
 ```bash
+make prune                     # both retention jobs
 make prune-usage-events        # honours ANALYTICS_RETENTION_DAYS
+make prune-api-keys            # honours API_KEY_RETENTION_DAYS
+```
+
+### API keys
+
+Machine callers — a cron job, a CI step, a customer's integration — get a
+long-lived key instead of logging in with a password and refreshing a JWT
+every half hour.
+
+```bash
+# Mint one (needs a browser session; a key cannot mint another key).
+curl -X POST https://api.example.com/api/v1/api-keys \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "CI deploy", "expires_in_days": 90}'
+
+# Use it, in either header.
+curl https://api.example.com/api/v1/users/me -H "X-API-Key: sk_live_…"
+curl https://api.example.com/api/v1/users/me -H "Authorization: Bearer sk_live_…"
+```
+
+- Only the SHA-256 digest is stored, and the raw secret is returned exactly
+  once, by the call that created it. Nothing — including the server — can
+  produce it again.
+- Keys are managed from `/dashboard/api-keys`, or the `/api/v1/api-keys`
+  endpoints. Those routes require a session JWT: a leaked key can read and
+  write the product, but cannot mint further keys or revoke the ones its
+  owner would use to lock it out.
+- Revocation is immediate and leaves a tombstone, so "when did this stop
+  working?" stays answerable. `make prune-api-keys` clears tombstones past
+  `API_KEY_RETENTION_DAYS`.
+- An optional `expires_in_days` (up to 365) is what lets a key handed to a
+  contractor stop working without anyone remembering to revoke it.
+
+### Operational alerting
+
+Alerts for the things worth waking someone for — readiness failing, a
+rejected or unconfigured Stripe webhook signature, a subscription falling to
+`past_due` — go through one router that applies a severity floor and then
+per-key suppression, to a transport chosen by `ALERT_BACKEND`:
+
+- `log` (the default) writes them to the structured log at a level a
+  log-based monitor can watch. Works with no configuration.
+- `webhook` POSTs one JSON object per alert to `ALERT_WEBHOOK_URL`, shaped
+  for Slack-compatible incoming webhooks.
+
+Suppression is the part that matters: a database outage fires the readiness
+probe every few seconds, so without `ALERT_SUPPRESSION_SECONDS` the on-call
+channel becomes unreadable exactly when it needs reading. Keys are
+per-incident, so one customer's failed payment never masks the next one's.
+
+Verify the routing before you need it — this sends a real notification:
+
+```bash
+curl -X POST https://api.example.com/api/v1/admin/alerts/test \
+  -H "Authorization: Bearer $OWNER_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" -d '{}'
 ```
 
 ### Stripe product/price catalog
@@ -204,11 +262,11 @@ add. Add an entry in the same commit as the change.
 
 ## Roadmap to PRD-ready
 
-This scaffold covers the foundation: auth, a data layer, a billing hook,
-tests, and CI. Turning it into a sellable product still requires (tracked
-in `ROADMAP.md`): real Stripe product/price wiring, email delivery
-(verification/reset), role-based access control, rate limiting, structured
-logging/observability, and a hardened production Docker/deploy setup.
+Everything on the 14-day plan in `ROADMAP.md` has landed except the two
+items that need a real deployment to close: a staging environment smoke
+tested end to end (the checklist is written — see
+[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)) and a PRD finalized against what
+actually shipped.
 
 ## License
 

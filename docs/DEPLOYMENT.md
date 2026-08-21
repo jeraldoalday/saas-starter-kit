@@ -151,8 +151,44 @@ fly machine run --app saas-backend \
   --command "python -m app.scripts.prune_usage_events"
 ```
 
-Check what it would remove first with
+Revoked API keys need the same treatment, and the two can share a machine:
+
+```bash
+fly machine run --app saas-backend \
+  --schedule daily \
+  --command "sh -c 'python -m app.scripts.prune_usage_events && python -m app.scripts.prune_api_keys'"
+```
+
+Check what either would remove first with
 `fly ssh console --app saas-backend -C "python -m app.scripts.prune_usage_events --dry-run"`.
+
+## 6. Alert routing
+
+Decide where alerts go before the first incident, not during it:
+
+```bash
+fly secrets set --app saas-backend \
+  ALERT_BACKEND="webhook" \
+  ALERT_WEBHOOK_URL="https://hooks.slack.com/services/…" \
+  ALERT_MIN_SEVERITY="warning"
+```
+
+Leaving `ALERT_BACKEND` at its `log` default is a valid choice — alerts land
+in the structured log at `WARNING`/`CRITICAL` for a log-based monitor to
+pick up. What is not valid is a typo: the app refuses to boot on an
+unrecognised backend or severity, or on `webhook` with no URL, rather than
+starting up and delivering nothing.
+
+Confirm the wiring end to end, as an owner. This sends a real notification:
+
+```bash
+curl -X POST https://api.example.com/api/v1/admin/alerts/test \
+  -H "Authorization: Bearer $OWNER_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" -d '{}'
+```
+
+The response names the transport that handled it, so "nothing arrived"
+starts from knowing whether the webhook was configured at all.
 
 ## Staging
 
@@ -179,11 +215,17 @@ Against a fresh staging deploy, in order:
    subscription reads `canceled` within a few seconds of the webhook.
 6. Reload the dashboard and confirm the activity panel shows the events the
    run above produced — signup, login, checkout, activation.
-7. Delete the account; confirm it is gone and that
+7. Mint an API key from `/dashboard/api-keys`, call
+   `GET /api/v1/users/me` with `X-API-Key`, revoke it, and confirm the same
+   call now answers `401`.
+8. `POST /api/v1/admin/alerts/test` as an owner; confirm the notification
+   reaches the on-call channel (or the log, if `ALERT_BACKEND=log`).
+9. Delete the account; confirm it is gone and that
    `GET /api/v1/analytics/events` (as an admin) no longer returns its rows.
 
-A run that gets through all seven exercises every external dependency:
-Postgres, SMTP, Stripe in both directions, and the analytics path.
+A run that gets through all nine exercises every external dependency:
+Postgres, SMTP, Stripe in both directions, the analytics path, key-based
+authentication, and alert delivery.
 
 ## Rollback
 

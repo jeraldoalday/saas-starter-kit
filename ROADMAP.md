@@ -45,7 +45,12 @@ a spec.
 - [ ] Staging environment smoke-tested end-to-end (checklist written; needs a real deploy to run against)
 - [ ] PRD finalized against what actually shipped
 
+## Beyond the plan — shipped since
+
+- [x] API keys for programmatic access (hashed at rest, expiring, revocable)
+- [x] Migrations exercised against a real Postgres in CI, both directions
+
 ## Post-PRD — Maintenance mode
 - [x] Dependency update cadence (Dependabot, weekly + grouped)
-- [ ] On-call/monitoring alert routing
+- [x] On-call/monitoring alert routing (severity floor + suppression; log or webhook transport)
 - [x] Changelog process for buyers/licensees (CHANGELOG.md)
