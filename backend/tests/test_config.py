@@ -60,3 +60,48 @@ def test_production_rejects_placeholder_stripe_values(field):
 
     with pytest.raises(ValidationError, match=field):
         Settings(**_production_kwargs(**{field: placeholder}))
+
+
+# --- alert routing --------------------------------------------------------
+#
+# Every one of these misconfigurations delivers nothing while looking fine,
+# and would only be discovered by the incident that needed the page.
+
+
+def test_alert_defaults_are_valid():
+    settings = Settings()
+
+    assert settings.alert_backend == "log"
+    assert settings.alert_min_severity == "warning"
+
+
+def test_an_unknown_alert_backend_is_rejected():
+    """It would otherwise fall through to the logging transport, so a typo in
+    ALERT_BACKEND reads as "configured" and pages nobody."""
+    with pytest.raises(ValidationError, match="alert_backend"):
+        Settings(alert_backend="slak")
+
+
+def test_an_unknown_alert_severity_is_rejected():
+    """An unrecognised severity outranks every real one, so a typo here drops
+    every alert below critical without saying so."""
+    with pytest.raises(ValidationError, match="alert_min_severity"):
+        Settings(alert_min_severity="warnin")
+
+
+def test_the_webhook_backend_requires_a_url():
+    with pytest.raises(ValidationError, match="alert_webhook_url"):
+        Settings(alert_backend="webhook", alert_webhook_url="")
+
+
+def test_a_configured_webhook_backend_is_accepted():
+    settings = Settings(
+        alert_backend="webhook", alert_webhook_url="https://hooks.example.com/abc"
+    )
+
+    assert settings.alert_backend == "webhook"
+
+
+@pytest.mark.parametrize("severity", ["info", "warning", "critical"])
+def test_every_severity_is_accepted(severity):
+    assert Settings(alert_min_severity=severity).alert_min_severity == severity

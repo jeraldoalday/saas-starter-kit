@@ -350,3 +350,11 @@ def test_the_test_endpoint_ignores_suppression(client, db_session, router, sende
     client.post("/api/v1/admin/alerts/test", json={}, headers=headers)
 
     assert len(sender.sent) == 2
+
+
+def test_config_severities_match_the_enum():
+    """app/core/config.py spells the severities out as strings to avoid an
+    import cycle. This is what keeps that copy honest."""
+    from app.core.config import ALERT_SEVERITIES
+
+    assert set(ALERT_SEVERITIES) == {severity.value for severity in Severity}

@@ -15,6 +15,12 @@ _INSECURE_DEFAULTS = {
 }
 MIN_SECRET_KEY_LENGTH = 32
 
+# Kept as plain strings rather than imported from app.services.alerts: that
+# package's factory reads settings, so importing it here would close a cycle.
+# tests/test_alerts.py asserts these stay in step with the Severity enum.
+ALERT_BACKENDS = ("log", "webhook")
+ALERT_SEVERITIES = ("info", "warning", "critical")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -99,6 +105,36 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @model_validator(mode="after")
+    def _validate_alert_routing(self) -> "Settings":
+        """Reject alert config that would silently deliver nothing.
+
+        Both of these fail quietly rather than loudly: an unknown backend
+        falls through to the logging transport, and an unknown severity
+        outranks every real one, so a typo in ALERT_MIN_SEVERITY drops every
+        alert below critical. Neither is discoverable until the incident
+        that needed the page.
+        """
+        if self.alert_backend not in ALERT_BACKENDS:
+            raise ValueError(
+                f"alert_backend must be one of {', '.join(ALERT_BACKENDS)}, "
+                f"got {self.alert_backend!r}"
+            )
+
+        if self.alert_min_severity not in ALERT_SEVERITIES:
+            raise ValueError(
+                f"alert_min_severity must be one of {', '.join(ALERT_SEVERITIES)}, "
+                f"got {self.alert_min_severity!r}"
+            )
+
+        if self.alert_backend == "webhook" and not self.alert_webhook_url:
+            raise ValueError(
+                "alert_backend is 'webhook' but alert_webhook_url is empty, "
+                "so no alert could ever be delivered"
+            )
+
+        return self
 
     @model_validator(mode="after")
     def _forbid_insecure_production_config(self) -> "Settings":
