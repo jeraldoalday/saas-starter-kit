@@ -41,4 +41,9 @@ describe("App routing", () => {
     renderAt("/dashboard");
     expect(screen.getByRole("heading", { name: "Log in" })).toBeInTheDocument();
   });
+
+  it("guards the API keys page too", () => {
+    renderAt("/dashboard/api-keys");
+    expect(screen.getByRole("heading", { name: "Log in" })).toBeInTheDocument();
+  });
 });

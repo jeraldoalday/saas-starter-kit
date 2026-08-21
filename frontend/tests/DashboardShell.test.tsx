@@ -26,6 +26,14 @@ function renderShell(onLogout = vi.fn()) {
             </DashboardShell>
           }
         />
+        <Route
+          path="/dashboard/api-keys"
+          element={
+            <DashboardShell user={currentUser} onLogout={onLogout}>
+              <p>API keys body</p>
+            </DashboardShell>
+          }
+        />
         <Route path="/login" element={<p>Login page</p>} />
       </Routes>
     </MemoryRouter>
@@ -39,6 +47,42 @@ describe("DashboardShell", () => {
 
     expect(screen.getByText(currentUser.email)).toBeInTheDocument();
     expect(screen.getByText("Dashboard body")).toBeInTheDocument();
+  });
+
+  it("links to every dashboard route", () => {
+    renderShell();
+
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute(
+      "href",
+      "/dashboard"
+    );
+    expect(screen.getByRole("link", { name: "API keys" })).toHaveAttribute(
+      "href",
+      "/dashboard/api-keys"
+    );
+  });
+
+  it("navigates to a nested route from the nav", () => {
+    renderShell();
+
+    fireEvent.click(screen.getByRole("link", { name: "API keys" }));
+
+    expect(screen.getByText("API keys body")).toBeInTheDocument();
+  });
+
+  it("stops highlighting Overview once a nested route is active", () => {
+    renderShell();
+    fireEvent.click(screen.getByRole("link", { name: "API keys" }));
+
+    // `end` on the Overview link is what keeps /dashboard from matching its
+    // own children; without it both links read as current.
+    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute(
+      "aria-current"
+    );
+    expect(screen.getByRole("link", { name: "API keys" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
   });
 
   it("clears the session and navigates to /login on logout", () => {
