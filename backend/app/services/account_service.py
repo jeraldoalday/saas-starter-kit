@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.security import verify_password
+from app.models.api_key import ApiKey
 from app.models.subscription import Subscription
 from app.models.token import OneTimeToken
 from app.models.usage_event import UsageEvent
@@ -38,6 +39,12 @@ def export_user_data(db: Session, user: User) -> dict[str, Any]:
         db.query(UsageEvent)
         .filter(UsageEvent.user_id == user.id)
         .order_by(UsageEvent.occurred_at.desc())
+        .all()
+    )
+    api_keys = (
+        db.query(ApiKey)
+        .filter(ApiKey.user_id == user.id)
+        .order_by(ApiKey.created_at.desc())
         .all()
     )
 
@@ -70,6 +77,22 @@ def export_user_data(db: Session, user: User) -> dict[str, Any]:
             else None
         ),
         "pending_email_tokens": token_count,
+        # Metadata only. The digest is a credential like the password hash,
+        # so it is excluded for the same reason — and the raw secret was
+        # never stored to begin with.
+        "api_keys": [
+            {
+                "name": key.name,
+                "prefix": key.prefix,
+                "created_at": key.created_at.isoformat() if key.created_at else None,
+                "last_used_at": (
+                    key.last_used_at.isoformat() if key.last_used_at else None
+                ),
+                "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+                "revoked_at": key.revoked_at.isoformat() if key.revoked_at else None,
+            }
+            for key in api_keys
+        ],
         # Behaviour recorded about someone is data held about them, so the
         # export has to include it or it under-reports.
         "usage_events": [
@@ -101,7 +124,10 @@ def delete_account(db: Session, user: User, password: str) -> None:
 
     # Tokens and usage events have no ORM relationship on User, and SQLite
     # doesn't enforce foreign keys by default, so leaving these to ON DELETE
-    # CASCADE would behave differently under test than in production.
+    # CASCADE would behave differently under test than in production. API
+    # keys do have a relationship (with delete-orphan), so they go with the
+    # user row below — but they are the credential most worth being sure
+    # about, hence the test in tests/test_account.py.
     db.query(OneTimeToken).filter(OneTimeToken.user_id == user_id).delete(
         synchronize_session=False
     )

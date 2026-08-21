@@ -39,6 +39,9 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Slack-compatible webhook. `POST /api/v1/admin/alerts/test` (owner-only)
   pushes a real alert through the real path, so the configuration is
   verifiable before the incident that needs it.
+- **API keys appear in the data export.** A data-access request returns key
+  metadata — name, prefix, created, last used, expiry, revocation — and never
+  the digest, which is a credential rather than user data.
 - **Retention prune for revoked API keys.** `make prune-api-keys` clears
   tombstones past `API_KEY_RETENTION_DAYS`; `make prune` runs both retention
   jobs.

@@ -1,7 +1,9 @@
+from app.models.api_key import ApiKey
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.token import OneTimeToken, TokenPurpose
 from app.models.usage_event import UsageEvent
 from app.models.user import User
+from app.services.api_key_service import create_api_key
 from app.services.token_service import issue_token
 
 EMAIL = "account@example.com"
@@ -198,3 +200,39 @@ def test_delete_erases_the_accounts_usage_events(client, db_session):
     assert (
         db_session.query(UsageEvent).filter(UsageEvent.user_id == user_id).count() == 0
     )
+
+
+def test_export_lists_api_keys_without_their_secrets(client, db_session):
+    headers = _auth(client, email="keys-export@example.com")
+    user = db_session.query(User).filter(User.email == "keys-export@example.com").one()
+    api_key, raw_key = create_api_key(db_session, user, name="CI deploy")
+
+    body = client.get("/api/v1/users/me/export", headers=headers).json()
+
+    exported = body["api_keys"]
+    assert [entry["name"] for entry in exported] == ["CI deploy"]
+    assert exported[0]["prefix"] == api_key.prefix
+    # The digest is a credential, like the password hash, and the raw secret
+    # was never stored — neither may appear in a file the user carries away.
+    serialized = str(body)
+    assert raw_key not in serialized
+    assert api_key.token_hash not in serialized
+
+
+def test_export_reports_no_keys_as_an_empty_list(client):
+    headers = _auth(client, email="no-keys@example.com")
+
+    assert client.get("/api/v1/users/me/export", headers=headers).json()["api_keys"] == []
+
+
+def test_deleting_an_account_destroys_its_api_keys(client, db_session):
+    headers = _auth(client, email="key-erasure@example.com")
+    user = db_session.query(User).filter(User.email == "key-erasure@example.com").one()
+    create_api_key(db_session, user, name="CI deploy")
+
+    response = client.request(
+        "DELETE", "/api/v1/users/me", json={"password": PASSWORD}, headers=headers
+    )
+
+    assert response.status_code == 204
+    assert db_session.query(ApiKey).count() == 0
