@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_user, get_verified_user
+from app.deps import get_api_or_session_user, get_verified_user
 from app.models.usage_event import EventName
 from app.models.user import User
 from app.schemas.billing import (
@@ -52,7 +52,9 @@ def portal(
 
 
 @router.get("/subscription", response_model=SubscriptionRead | None)
-def get_subscription(current_user: User = Depends(get_current_user)) -> SubscriptionRead | None:
+def get_subscription(
+    current_user: User = Depends(get_api_or_session_user),
+) -> SubscriptionRead | None:
     return current_user.subscription
 
 

@@ -33,6 +33,8 @@ class EventName(StrEnum):
     ACCOUNT_DELETED = "account.deleted"
     ACCOUNT_DEACTIVATED = "account.deactivated"
     ACCOUNT_REACTIVATED = "account.reactivated"
+    API_KEY_CREATED = "api_key.created"
+    API_KEY_REVOKED = "api_key.revoked"
 
 
 class EventSource(StrEnum):

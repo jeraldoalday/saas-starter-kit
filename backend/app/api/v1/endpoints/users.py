@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_api_or_session_user, get_current_user
 from app.models.usage_event import EventName
 from app.models.user import User
 from app.schemas.user import DeleteAccountRequest, UserRead
@@ -20,13 +20,19 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("/me", response_model=UserRead)
-def read_current_user(current_user: User = Depends(get_current_user)) -> UserRead:
+def read_current_user(
+    current_user: User = Depends(get_api_or_session_user),
+) -> UserRead:
+    """The calling account. Reachable with a session or an API key.
+
+    Doubles as the credential check a client can call once at startup to
+    find out whether its key still works."""
     return current_user
 
 
 @router.get("/me/export")
 def export_my_data(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_api_or_session_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Everything held about the caller, for a data-access request."""

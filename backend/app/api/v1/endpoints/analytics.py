@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps_rate_limit import analytics_ingest_rate_limit
 from app.core.config import get_settings
 from app.database import get_db
-from app.deps import get_current_user, require_admin
+from app.deps import get_api_or_session_user, require_admin
 from app.models.usage_event import EventSource
 from app.models.user import User
 from app.schemas.analytics import (
@@ -35,7 +35,7 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 )
 def ingest_events(
     data: EventBatchIngest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_api_or_session_user),
     db: Session = Depends(get_db),
 ) -> IngestResponse:
     """Accept a batch of client events for the calling account.
@@ -64,7 +64,7 @@ def ingest_events(
 @router.get("/me", response_model=UsageSummaryRead)
 def my_usage(
     days: int = Query(default=14, ge=1, le=MAX_WINDOW_DAYS),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_api_or_session_user),
     db: Session = Depends(get_db),
 ) -> UsageSummaryRead:
     """The caller's own activity. No special role needed: it is their data."""

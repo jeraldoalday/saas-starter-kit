@@ -58,3 +58,6 @@ password_reset_rate_limit = RateLimit(limit=5, window_seconds=300)
 # stop a looping client from filling the events table, not to ration normal
 # use. A page load flushes one batch, not one request per event.
 analytics_ingest_rate_limit = RateLimit(limit=60, window_seconds=60)
+# Key creation is a session-authenticated write that mints a credential;
+# a human needs a handful, a script stuck in a retry loop needs stopping.
+api_key_create_rate_limit = RateLimit(limit=10, window_seconds=60)
