@@ -23,6 +23,7 @@ const currentUser: User = {
   full_name: "Someone",
   is_active: true,
   is_verified: true,
+  role: "member",
 };
 
 /** Queues one successful JSON response per argument, in call order. */

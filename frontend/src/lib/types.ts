@@ -4,6 +4,25 @@ export interface User {
   full_name: string | null;
   is_active: boolean;
   is_verified: boolean;
+  /** "member" | "admin" | "owner" — ranked, so a view asks for a minimum. */
+  role: string;
+}
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  /** Recognisable slice of the secret; enough to tell two keys apart. */
+  prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+  is_active: boolean;
+}
+
+/** The creation response — the only time the raw secret is ever returned. */
+export interface CreatedApiKey extends ApiKey {
+  key: string;
 }
 
 export interface TokenPair {

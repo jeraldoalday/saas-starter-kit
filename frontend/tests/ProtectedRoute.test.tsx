@@ -11,6 +11,7 @@ const currentUser: User = {
   full_name: "Someone",
   is_active: true,
   is_verified: true,
+  role: "member",
 };
 
 function renderProtected() {
