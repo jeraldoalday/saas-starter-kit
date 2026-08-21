@@ -8,6 +8,7 @@ from app.models.token import OneTimeToken, TokenPurpose
 from app.models.user import User
 from app.services.email.factory import get_email_sender
 from app.services.email.templates import password_reset_email
+from app.services.session_service import revoke_all
 from app.services.token_service import consume_token, issue_token
 
 logger = logging.getLogger("app.password_reset")
@@ -53,7 +54,21 @@ def reset_password(db: Session, raw_token: str, new_password: str) -> User | Non
     _invalidate_other_reset_tokens(db, user, keep_id=token.id)
 
     db.commit()
-    logger.info("password reset completed", extra={"user_id": str(user.id)})
+
+    # And every signed-in device goes with it. Changing the password is the
+    # one action people take *because* they believe someone else has access,
+    # and until refresh tokens were revocable it did nothing to them: an
+    # attacker holding one kept minting access tokens for the rest of its
+    # lifetime, through the reset and well past it. Deliberately revokes all
+    # sessions rather than sparing any, since the legitimate owner is not
+    # signed in here — they are holding a reset link — and whoever is signed
+    # in is exactly who this is meant to evict.
+    revoked = revoke_all(db, user)
+
+    logger.info(
+        "password reset completed",
+        extra={"user_id": str(user.id), "sessions_revoked": revoked},
+    )
     return user
 
 
