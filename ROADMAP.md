@@ -4,6 +4,20 @@ Tracking doc for the 14-day push from this scaffold to a sellable,
 PRD-ready product. Update as items land; this is a working checklist, not
 a spec.
 
+<!--
+"Staging environment smoke-tested end-to-end" is the next unchecked item
+and is currently blocked, not skipped: it requires an actual staging
+deploy (Fly.io apps for backend/frontend, a managed Postgres, live Stripe
+test-mode keys with a real webhook endpoint, and a working SMTP relay) to
+run the checklist in docs/DEPLOYMENT.md#smoke-test against. None of that
+infrastructure exists or is reachable from this automated environment, and
+there are no deploy/Stripe/SMTP credentials configured here. Faking a run
+against nonexistent infra would misrepresent the state of the product, so
+this stays unchecked until someone with access to a real staging
+deployment runs the seven-step checklist and reports the result. Remove
+this note once that happens and the box is checked.
+-->
+
 ## Day 1-2 — Foundation (this scaffold)
 - [x] Backend skeleton (FastAPI, config, health check)
 - [x] Database layer (SQLAlchemy models, Alembic migrations)
