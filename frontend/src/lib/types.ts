@@ -38,6 +38,35 @@ export interface AuthSession {
   is_active: boolean;
 }
 
+/**
+ * One entry in the account's own security trail.
+ *
+ * Carries no identifier for whoever caused it — only whether it was somebody
+ * else. The API draws that line deliberately: naming the administrator would
+ * hand an internal identifier to a member with no claim to it.
+ */
+export interface AuditEntry {
+  id: string;
+  /** Dotted action name, e.g. "auth.login_failed". */
+  action: string;
+  /** "success" | "failure". */
+  outcome: string;
+  ip_address: string | null;
+  /** Self-reported and unverified, exactly as on a session. */
+  user_agent: string | null;
+  context: Record<string, string | number | boolean | null>;
+  created_at: string;
+  by_another_account: boolean;
+}
+
+/** A page of trail, with the total behind it so a client can page. */
+export interface AuditPage {
+  entries: AuditEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface TokenPair {
   access_token: string;
   refresh_token: string;
