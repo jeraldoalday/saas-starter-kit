@@ -1,14 +1,17 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.api.request_info import request_origin
 from app.database import get_db
 from app.deps import get_current_user
+from app.models.audit_log import AuditAction
 from app.models.usage_event import EventName
 from app.models.user import User
 from app.schemas.session import RevokeAllRequest, RevokeAllResponse, SessionRead
 from app.services.analytics_service import record_event
+from app.services.audit_service import record as record_audit
 from app.services.session_service import (
     SessionNotFoundError,
     authenticate,
@@ -40,6 +43,7 @@ def list_account_sessions(
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_one(
     session_id: uuid.UUID,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
@@ -60,11 +64,19 @@ def revoke_one(
         ) from exc
 
     record_event(db, EventName.SESSION_REVOKED, user=current_user)
+    record_audit(
+        db,
+        AuditAction.SESSION_REVOKED,
+        user=current_user,
+        context={"session_id": str(session_id)},
+        **request_origin(request),
+    )
 
 
 @router.post("/revoke-all", response_model=RevokeAllResponse)
 def revoke_every_session(
     data: RevokeAllRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> RevokeAllResponse:
@@ -91,5 +103,14 @@ def revoke_every_session(
         EventName.SESSIONS_REVOKED_ALL,
         user=current_user,
         properties={"revoked": revoked, "kept_current": keep_session_id is not None},
+    )
+    # The count is the part worth keeping: "I signed out 4 devices" is
+    # what makes a later "and one signed straight back in" legible.
+    record_audit(
+        db,
+        AuditAction.SESSIONS_REVOKED_ALL,
+        user=current_user,
+        context={"revoked": revoked, "kept_current": keep_session_id is not None},
+        **request_origin(request),
     )
     return RevokeAllResponse(revoked=revoked)

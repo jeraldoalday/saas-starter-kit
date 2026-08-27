@@ -1,11 +1,13 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps_rate_limit import api_key_create_rate_limit
+from app.api.request_info import request_origin
 from app.database import get_db
 from app.deps import get_current_user
+from app.models.audit_log import AuditAction
 from app.models.usage_event import EventName
 from app.models.user import User
 from app.schemas.api_key import ApiKeyCreate, ApiKeyCreated, ApiKeyRead
@@ -17,6 +19,7 @@ from app.services.api_key_service import (
     list_api_keys,
     revoke_api_key,
 )
+from app.services.audit_service import record as record_audit
 
 # Deliberately gated on get_current_user (a session JWT) rather than on the
 # key-or-session dependency the rest of the API uses: a leaked key can read
@@ -42,6 +45,7 @@ def list_keys(
 )
 def create_key(
     data: ApiKeyCreate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiKeyCreated:
@@ -68,12 +72,28 @@ def create_key(
         user=current_user,
         properties={"expires": data.expires_in_days is not None},
     )
+    # The prefix and not the secret, which is the same thing the dashboard
+    # shows: enough to say *which* key appeared, useless to whoever reads
+    # the trail later.
+    record_audit(
+        db,
+        AuditAction.API_KEY_CREATED,
+        user=current_user,
+        context={
+            "key_id": str(api_key.id),
+            "prefix": api_key.prefix,
+            "name": api_key.name,
+            "expires": data.expires_in_days is not None,
+        },
+        **request_origin(request),
+    )
     return ApiKeyCreated(**ApiKeyRead.model_validate(api_key).model_dump(), key=raw_key)
 
 
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_key(
     key_id: uuid.UUID,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
@@ -88,3 +108,10 @@ def revoke_key(
         ) from exc
 
     record_event(db, EventName.API_KEY_REVOKED, user=current_user)
+    record_audit(
+        db,
+        AuditAction.API_KEY_REVOKED,
+        user=current_user,
+        context={"key_id": str(key_id)},
+        **request_origin(request),
+    )

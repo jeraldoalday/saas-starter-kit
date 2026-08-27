@@ -1,11 +1,13 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.request_info import request_origin
 from app.database import get_db
 from app.deps import require_admin, require_owner
+from app.models.audit_log import AuditAction
 from app.models.auth_session import AuthSession
 from app.models.role import Role, rank
 from app.models.subscription import Subscription
@@ -16,6 +18,7 @@ from app.schemas.user import UserRead, UserRoleUpdate, UserStatusUpdate
 from app.services.alerts import Severity, get_alert_router, notify
 from app.services.analytics_service import record_event
 from app.services.api_key_service import count_keys
+from app.services.audit_service import record as record_audit
 from app.services.session_service import count_sessions
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -84,6 +87,7 @@ def list_users(
 def update_user_role(
     user_id: uuid.UUID,
     data: UserRoleUpdate,
+    request: Request,
     current_user: User = Depends(require_owner),
     db: Session = Depends(get_db),
 ) -> UserRead:
@@ -102,9 +106,25 @@ def update_user_role(
             detail="Owners cannot demote themselves",
         )
 
+    previous_role = user.role
     user.role = data.role.value
     db.commit()
     db.refresh(user)
+
+    if previous_role != user.role:
+        # Filed against the *subject*, with the owner as actor, so it lands
+        # in the trail of the person whose privileges changed. Somebody
+        # discovering they are suddenly an admin — or suddenly not — should
+        # find the answer in their own history rather than having to ask.
+        record_audit(
+            db,
+            AuditAction.ROLE_CHANGED,
+            user=user,
+            actor=current_user,
+            context={"from": previous_role, "to": user.role},
+            **request_origin(request),
+        )
+
     return user
 
 
@@ -112,6 +132,7 @@ def update_user_role(
 def update_user_status(
     user_id: uuid.UUID,
     data: UserStatusUpdate,
+    request: Request,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> UserRead:
@@ -155,6 +176,17 @@ def update_user_status(
             EventName.ACCOUNT_REACTIVATED if user.is_active else EventName.ACCOUNT_DEACTIVATED,
             user_id=user.id,
             properties={"by_role": current_user.role},
+        )
+        # The analytics event above records the role that acted; the audit
+        # row records *who*. Churn is countable from the first, but "who
+        # switched my account off" is only answerable from the second.
+        record_audit(
+            db,
+            AuditAction.STATUS_CHANGED,
+            user=user,
+            actor=current_user,
+            context={"is_active": user.is_active},
+            **request_origin(request),
         )
 
     return user

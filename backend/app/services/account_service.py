@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import verify_password
 from app.models.api_key import ApiKey
+from app.models.audit_log import AuditLog
 from app.models.subscription import Subscription
 from app.models.token import OneTimeToken
 from app.models.usage_event import UsageEvent
@@ -45,6 +46,16 @@ def export_user_data(db: Session, user: User) -> dict[str, Any]:
         db.query(ApiKey)
         .filter(ApiKey.user_id == user.id)
         .order_by(ApiKey.created_at.desc())
+        .all()
+    )
+    # Only rows where this account is the *subject*. Rows where they were
+    # the actor describe what they did to somebody else's account, and
+    # exporting those would put another person's identifiers into this
+    # person's file — an access request is not a licence to read across.
+    audit_entries = (
+        db.query(AuditLog)
+        .filter(AuditLog.user_id == user.id)
+        .order_by(AuditLog.created_at.desc())
         .all()
     )
 
@@ -93,6 +104,24 @@ def export_user_data(db: Session, user: User) -> dict[str, Any]:
             }
             for key in api_keys
         ],
+        # The security trail is data held about them too, and it is the
+        # part they are most likely to be asking for: every sign-in, from
+        # which address, and every refusal.
+        "audit_log": [
+            {
+                "action": entry.action,
+                "outcome": entry.outcome,
+                "ip_address": entry.ip_address,
+                "user_agent": entry.user_agent,
+                # A bare "somebody else did this" rather than who. Naming
+                # the admin would hand out an internal identifier the
+                # subject has no claim to.
+                "by_another_account": entry.actor_user_id is not None,
+                "context": entry.context,
+                "created_at": entry.created_at.isoformat(),
+            }
+            for entry in audit_entries
+        ],
         # Behaviour recorded about someone is data held about them, so the
         # export has to include it or it under-reports.
         "usage_events": [
@@ -133,6 +162,18 @@ def delete_account(db: Session, user: User, password: str) -> None:
     )
     db.query(UsageEvent).filter(UsageEvent.user_id == user_id).delete(
         synchronize_session=False
+    )
+    db.query(AuditLog).filter(AuditLog.user_id == user_id).delete(
+        synchronize_session=False
+    )
+    # Rows where they were the *actor* are kept and disowned, matching the
+    # SET NULL the schema declares. Deleting an admin must not erase the
+    # record of what that admin did to other people's accounts — the action
+    # stays, the attribution goes — and doing it explicitly means the
+    # behaviour is the same under SQLite, which does not enforce foreign
+    # keys, as it is in production.
+    db.query(AuditLog).filter(AuditLog.actor_user_id == user_id).update(
+        {AuditLog.actor_user_id: None}, synchronize_session=False
     )
 
     # The subscription goes via the relationship's delete-orphan cascade;
