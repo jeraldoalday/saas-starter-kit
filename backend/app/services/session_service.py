@@ -333,11 +333,39 @@ def count_sessions(db: Session) -> int:
     return int(db.execute(select(func.count()).select_from(AuthSession)).scalar_one())
 
 
+def count_all_active_sessions(db: Session, *, now: datetime | None = None) -> int:
+    """Live sessions across every account, counted in the database.
+
+    The per-account counterpart, `count_active_sessions`, is deliberately
+    counted in Python: it folds in expiry, and the model already knows how
+    to compare that. That is a fine trade over one account's ten sessions
+    and a bad one over a deployment's, where the alternative is loading
+    every row in the table to add up a single integer.
+
+    So liveness is restated as a WHERE clause here. It has to agree with
+    `AuthSession.is_usable`, and does: unrevoked, and not yet expired.
+
+    The cutoff is normalised to UTC before it is bound. SQLite stores naive
+    wall-clock UTC and its driver ignores tzinfo entirely, so an aware
+    datetime in any other zone would be compared as though its local
+    wall-clock reading were UTC — off by the offset, silently, and only on
+    the dialect the tests run on.
+    """
+    now = as_utc(now) or datetime.now(UTC)
+    stmt = (
+        select(func.count())
+        .select_from(AuthSession)
+        .where(AuthSession.revoked_at.is_(None), AuthSession.expires_at > now)
+    )
+    return int(db.execute(stmt).scalar_one())
+
+
 __all__ = [
     "MAX_ACTIVE_SESSIONS_PER_USER",
     "SessionNotFoundError",
     "authenticate",
     "count_active_sessions",
+    "count_all_active_sessions",
     "count_sessions",
     "hash_refresh_token",
     "list_sessions",

@@ -8,7 +8,6 @@ from app.api.request_info import request_origin
 from app.database import get_db
 from app.deps import require_admin, require_owner
 from app.models.audit_log import AuditAction
-from app.models.auth_session import AuthSession
 from app.models.role import Role, rank
 from app.models.subscription import Subscription
 from app.models.usage_event import EventName
@@ -19,7 +18,7 @@ from app.services.alerts import Severity, get_alert_router, notify
 from app.services.analytics_service import record_event
 from app.services.api_key_service import count_keys
 from app.services.audit_service import record as record_audit
-from app.services.session_service import count_sessions
+from app.services.session_service import count_all_active_sessions, count_sessions
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -36,9 +35,11 @@ def overview(
     whole deployment rather than with one account, so it must not be the
     thing that falls over first.
 
-    Active sessions are the exception, and are counted in Python: liveness
-    folds in expiry, which the model already knows how to compare including
-    the naive-datetime handling SQLite forces.
+    That now includes the active-session figure, which used to be the
+    exception: it loaded every row in auth_sessions and summed a property
+    in Python, so the one endpoint that must not fall over first was the
+    one holding the whole table in memory. `count_all_active_sessions`
+    restates liveness as a WHERE clause instead.
     """
 
     def _count(model, *conditions) -> int:
@@ -54,15 +55,13 @@ def overview(
         ).all()
     }
 
-    sessions = db.execute(select(AuthSession)).scalars().all()
-
     return AdminOverview(
         total_users=_count(User),
         active_users=_count(User, User.is_active.is_(True)),
         verified_users=_count(User, User.is_verified.is_(True)),
         total_api_keys=count_keys(db),
         total_sessions=count_sessions(db),
-        active_sessions=sum(1 for session in sessions if session.is_active),
+        active_sessions=count_all_active_sessions(db),
         subscriptions_by_status=by_status,
     )
 

@@ -14,6 +14,7 @@ import pytest
 from app.core.security import create_refresh_token, hash_password
 from app.models.auth_session import AuthSession
 from app.models.user import User
+from app.services import session_service
 from app.services.session_service import (
     MAX_ACTIVE_SESSIONS_PER_USER,
     SessionNotFoundError,
@@ -299,3 +300,71 @@ def test_prune_keeps_live_sessions(db_session, user):
     start_session(db_session, user, _token(user))
 
     assert purge_expired_sessions(db_session, older_than_days=1) == 0
+
+
+class TestDeploymentWideActiveCount:
+    """The admin overview's figure, counted in SQL rather than in Python.
+
+    It has to give the same answer as the per-account count, which folds in
+    expiry through the model. These pin the two together, because the SQL
+    restates liveness and a restatement is exactly the kind of thing that
+    drifts.
+    """
+
+    def _session(self, db_session, user, *, expires_in_days=14, revoked=False):
+        now = datetime.now(UTC)
+        row = AuthSession(
+            user_id=user.id,
+            token_hash=uuid.uuid4().hex,
+            created_at=now,
+            last_used_at=now,
+            expires_at=now + timedelta(days=expires_in_days),
+            revoked_at=now if revoked else None,
+        )
+        db_session.add(row)
+        db_session.commit()
+        return row
+
+    def test_counts_only_the_live_ones(self, db_session, user):
+        self._session(db_session, user)
+        self._session(db_session, user)
+        self._session(db_session, user, revoked=True)
+        self._session(db_session, user, expires_in_days=-1)
+
+        assert session_service.count_all_active_sessions(db_session) == 2
+
+    def test_agrees_with_the_per_account_count(self, db_session, user):
+        for _ in range(3):
+            self._session(db_session, user)
+        self._session(db_session, user, revoked=True)
+
+        # One account here, so the two must land on the same number. They
+        # arrive at it by different routes: a WHERE clause and the model's
+        # own is_usable.
+        assert session_service.count_all_active_sessions(
+            db_session
+        ) == session_service.count_active_sessions(db_session, user)
+
+    def test_spans_accounts(self, db_session, user):
+        other = User(
+            email="second-account@example.com",
+            hashed_password=hash_password("s3cret-password"),
+        )
+        db_session.add(other)
+        db_session.commit()
+
+        self._session(db_session, user)
+        self._session(db_session, other)
+
+        assert session_service.count_all_active_sessions(db_session) == 2
+
+    def test_an_empty_table_counts_zero(self, db_session):
+        assert session_service.count_all_active_sessions(db_session) == 0
+
+    def test_a_naive_cutoff_is_read_as_utc(self, db_session, user):
+        self._session(db_session, user)
+
+        # SQLite's driver ignores tzinfo, so a cutoff in another zone would
+        # otherwise be compared as though its wall-clock reading were UTC.
+        naive = datetime.now(UTC).replace(tzinfo=None)
+        assert session_service.count_all_active_sessions(db_session, now=naive) == 1
