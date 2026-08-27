@@ -6,6 +6,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { LandingPage } from "@/pages/LandingPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
+import { SecurityPage } from "@/pages/SecurityPage";
 import { SessionsPage } from "@/pages/SessionsPage";
 
 export function App() {
@@ -19,6 +20,7 @@ export function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/dashboard/api-keys" element={<ApiKeysPage />} />
         <Route path="/dashboard/sessions" element={<SessionsPage />} />
+        <Route path="/dashboard/security" element={<SecurityPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

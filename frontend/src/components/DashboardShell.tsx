@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { to: "/dashboard", label: "Overview", end: true },
   { to: "/dashboard/api-keys", label: "API keys", end: false },
   { to: "/dashboard/sessions", label: "Sessions", end: false },
+  { to: "/dashboard/security", label: "Security", end: false },
 ];
 
 export function DashboardShell({ user, onLogout, children }: DashboardShellProps) {
