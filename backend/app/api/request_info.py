@@ -34,3 +34,13 @@ def user_agent(request: Request) -> str | None:
     lies about it only misleads itself.
     """
     return request.headers.get("user-agent")
+
+
+def request_origin(request: Request) -> dict[str, str | None]:
+    """Both of the above, shaped for splatting into an audit record.
+
+    A convenience rather than a new idea: the audit trail wants the pair on
+    every call, and spelling out two keyword arguments at a dozen call sites
+    is how one of them eventually gets forgotten.
+    """
+    return {"ip_address": client_ip(request), "user_agent": user_agent(request)}

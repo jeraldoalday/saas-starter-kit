@@ -8,7 +8,7 @@ from app.api.deps_rate_limit import (
     password_reset_rate_limit,
     register_rate_limit,
 )
-from app.api.request_info import client_ip, user_agent
+from app.api.request_info import client_ip, request_origin, user_agent
 from app.core.security import (
     TokenType,
     create_access_token,
@@ -17,6 +17,7 @@ from app.core.security import (
 )
 from app.database import get_db
 from app.deps import get_current_user
+from app.models.audit_log import AuditAction, AuditOutcome
 from app.models.usage_event import EventName
 from app.models.user import User
 from app.schemas.auth import (
@@ -30,6 +31,7 @@ from app.schemas.auth import (
 )
 from app.schemas.user import UserCreate, UserRead
 from app.services.analytics_service import record_event
+from app.services.audit_service import record as record_audit
 from app.services.auth_service import (
     EmailAlreadyRegisteredError,
     InactiveAccountError,
@@ -46,13 +48,37 @@ from app.services.verification_service import send_verification_email, verify_em
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _audit_failed_login(
+    db: Session, email: str, action: AuditAction, origin: dict[str, str | None]
+) -> None:
+    """Record a refused sign-in, attributing it only if the account exists.
+
+    The lookup costs one query, and only on the failure path. It buys the
+    row an owner actually needs — a refusal against *their* account — which
+    an unattributed row could never be, since nothing would connect it to
+    them without storing the address that was tried.
+    """
+    subject = db.query(User).filter(User.email == email).first()
+    record_audit(
+        db,
+        action,
+        user=subject,
+        outcome=AuditOutcome.FAILURE,
+        context={"known_account": subject is not None},
+        **origin,
+    )
+
+
+
 @router.post(
     "/register",
     response_model=UserRead,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(register_rate_limit)],
 )
-def register(data: UserCreate, db: Session = Depends(get_db)) -> UserRead:
+def register(
+    data: UserCreate, request: Request, db: Session = Depends(get_db)
+) -> UserRead:
     try:
         user = register_user(db, data)
     except EmailAlreadyRegisteredError as exc:
@@ -62,6 +88,12 @@ def register(data: UserCreate, db: Session = Depends(get_db)) -> UserRead:
 
     send_verification_email(db, user)
     record_event(db, EventName.USER_REGISTERED, user=user)
+    # The first row in the account's trail, and the one that dates every
+    # other. An owner reading their history should not have to infer when
+    # the account started from the oldest sign-in they can still see.
+    record_audit(
+        db, AuditAction.ACCOUNT_REGISTERED, user=user, **request_origin(request)
+    )
     return user
 
 
@@ -71,9 +103,23 @@ def register(data: UserCreate, db: Session = Depends(get_db)) -> UserRead:
     dependencies=[Depends(password_reset_rate_limit)],
 )
 def forgot_password(
-    data: ForgotPasswordRequest, db: Session = Depends(get_db)
+    data: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)
 ) -> MessageResponse:
     request_password_reset(db, data.email)
+
+    # Recorded against the account when the address is one we hold, and
+    # anonymously when it is not. The row an owner needs to see is "somebody
+    # asked to reset my password from an IP I don't recognise", which only
+    # exists if the request is attributed; the unattributed rows are what
+    # show a sweep across addresses that were never registered.
+    subject = db.query(User).filter(User.email == data.email).first()
+    record_audit(
+        db,
+        AuditAction.PASSWORD_RESET_REQUESTED,
+        user=subject,
+        context={"known_account": subject is not None},
+        **request_origin(request),
+    )
     # Deliberately identical whether or not the address exists: a differing
     # response would turn this into an account-enumeration oracle.
     return MessageResponse(
@@ -87,20 +133,32 @@ def forgot_password(
     dependencies=[Depends(password_reset_rate_limit)],
 )
 def reset_password_endpoint(
-    data: ResetPasswordRequest, db: Session = Depends(get_db)
+    data: ResetPasswordRequest, request: Request, db: Session = Depends(get_db)
 ) -> MessageResponse:
     user = reset_password(db, data.token, data.new_password)
     if user is None:
+        # Not audited. There is no account to attribute it to — a token that
+        # did not resolve names nobody — and a row saying only "an unknown
+        # token was tried" is noise in every trail that would carry it.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Reset link is invalid or has expired",
         )
+
+    # A completed reset ends every session, so this row is also the
+    # explanation for the sign-outs the owner is about to notice.
+    record_audit(
+        db,
+        AuditAction.PASSWORD_RESET_COMPLETED,
+        user=user,
+        **request_origin(request),
+    )
     return MessageResponse(detail="Password updated")
 
 
 @router.post("/verify-email", response_model=MessageResponse)
 def verify_email_endpoint(
-    data: VerifyEmailRequest, db: Session = Depends(get_db)
+    data: VerifyEmailRequest, request: Request, db: Session = Depends(get_db)
 ) -> MessageResponse:
     user = verify_email(db, data.token)
     if user is None:
@@ -109,6 +167,9 @@ def verify_email_endpoint(
             detail="Verification link is invalid or has expired",
         )
     record_event(db, EventName.USER_VERIFIED, user=user)
+    record_audit(
+        db, AuditAction.EMAIL_VERIFIED, user=user, **request_origin(request)
+    )
     return MessageResponse(detail="Email verified")
 
 
@@ -132,9 +193,16 @@ def resend_verification(
 def login(
     data: LoginRequest, request: Request, db: Session = Depends(get_db)
 ) -> TokenPair:
+    origin = request_origin(request)
     try:
         user = authenticate_user(db, data.email, data.password)
     except InvalidCredentialsError as exc:
+        # Attributed to the account when the address is one we hold, so the
+        # owner sees "three failed sign-ins from an IP I don't recognise" in
+        # their own trail. The address itself is never stored: an attempt
+        # against an address nobody registered leaves an unattributed row,
+        # which is what shows a spray without recording what was typed.
+        _audit_failed_login(db, data.email, AuditAction.LOGIN_FAILED, origin)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password"
         ) from exc
@@ -142,14 +210,22 @@ def login(
         # Distinct from a bad password: the caller proved who they are, and
         # telling them the account is disabled is what lets them ask an
         # admin to re-enable it instead of resetting a working password.
+        # Distinct in the trail too — somebody signing in with the right
+        # password to a switched-off account is a different story from
+        # somebody guessing, and an admin looking at a deactivation wants to
+        # know whether the owner has been trying to get back in.
+        _audit_failed_login(db, data.email, AuditAction.LOGIN_BLOCKED, origin)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account has been deactivated",
         ) from exc
 
-    # Only successful logins are recorded. Failures are a security signal,
-    # not a product one, and they already go to the rate limiter and the log.
+    # Only successful logins are recorded here. Failures are a security
+    # signal rather than a product one, so they go to the audit trail above
+    # instead — along with the rate limiter and the log, which is all they
+    # had before that table existed.
     record_event(db, EventName.USER_LOGGED_IN, user=user)
+    record_audit(db, AuditAction.LOGIN, user=user, **origin)
 
     tokens = issue_token_pair(user)
     # The refresh token only works while this row says it may. Recording it
@@ -203,7 +279,9 @@ def refresh(data: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair:
 
 
 @router.post("/logout", response_model=MessageResponse)
-def logout(data: RefreshRequest, db: Session = Depends(get_db)) -> MessageResponse:
+def logout(
+    data: RefreshRequest, request: Request, db: Session = Depends(get_db)
+) -> MessageResponse:
     """End the session behind this refresh token.
 
     Takes the refresh token rather than requiring an access token, because
@@ -220,5 +298,16 @@ def logout(data: RefreshRequest, db: Session = Depends(get_db)) -> MessageRespon
         user = db.get(User, session.user_id)
         if user is not None:
             revoke_session(db, user, session.id)
+            # Only the real sign-out is recorded. An unknown token produces
+            # no row on purpose: it names no account, and letting one write
+            # a row would hand an unauthenticated caller a way to append to
+            # the trail.
+            record_audit(
+                db,
+                AuditAction.LOGOUT,
+                user=user,
+                context={"session_id": str(session.id)},
+                **request_origin(request),
+            )
 
     return MessageResponse(detail="Signed out")
