@@ -93,6 +93,13 @@ class Settings(BaseSettings):
     # makes the live ones harder to find.
     session_retention_days: int = 30
 
+    # How long the security audit trail is kept. Between the other two
+    # windows on purpose: long enough that an incident noticed months late
+    # still has something to reconstruct from, short enough that a record of
+    # where people were when they signed in is not held indefinitely to
+    # answer questions nobody is asking.
+    audit_retention_days: int = 180
+
     # Operational alerting. "log" (or its synonym "console") writes to the
     # structured log at a level a log-based monitor can watch; "webhook"
     # POSTs to an incoming webhook — a plain JSON body, which Slack renders

@@ -231,3 +231,76 @@ class TestPruneSessions:
         monkeypatch.setattr(prune_sessions, "SessionLocal", session_factory)
 
         assert prune_sessions.main(["--days", "0"]) == 1
+
+
+class TestAuditLogPrune:
+    """The trail is append-only, so somebody has to take the other side.
+
+    Its window is a separate policy decision from the session one, which is
+    why it gets its own entry point rather than riding along with another
+    prune, and why these tests check the default is read from its own
+    setting.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _use_the_test_database(self, monkeypatch, session_factory):
+        from app.scripts import prune_audit_logs
+
+        monkeypatch.setattr(prune_audit_logs, "SessionLocal", session_factory)
+
+    def _seed(self, db_session, user, *ages_in_days: int) -> None:
+        from app.models.audit_log import AuditAction, AuditLog
+
+        now = datetime.now(UTC)
+        for age in ages_in_days:
+            db_session.add(
+                AuditLog(
+                    user_id=user.id,
+                    action=AuditAction.LOGIN.value,
+                    outcome="success",
+                    context={},
+                    created_at=now - timedelta(days=age),
+                )
+            )
+        db_session.commit()
+
+    def test_deletes_only_entries_past_the_window(self, db_session, user, capsys):
+        from app.models.audit_log import AuditLog
+        from app.scripts import prune_audit_logs
+
+        self._seed(db_session, user, 400, 200, 10)
+
+        assert prune_audit_logs.main(["--days", "180"]) == 0
+
+        assert "Deleted 2" in capsys.readouterr().out
+        assert db_session.query(AuditLog).count() == 1
+
+    def test_dry_run_counts_without_deleting(self, db_session, user, capsys):
+        from app.models.audit_log import AuditLog
+        from app.scripts import prune_audit_logs
+
+        self._seed(db_session, user, 400, 200, 10)
+
+        assert prune_audit_logs.main(["--dry-run", "--days", "180"]) == 0
+
+        assert "2 audit entr(ies)" in capsys.readouterr().out
+        # The point of a dry run is that it is safe to run at any time.
+        assert db_session.query(AuditLog).count() == 3
+
+    def test_defaults_to_the_configured_retention(self, db_session, user, capsys):
+        from app.core.config import get_settings
+        from app.scripts import prune_audit_logs
+
+        self._seed(db_session, user, get_settings().audit_retention_days + 5, 1)
+
+        assert prune_audit_logs.main([]) == 0
+
+        assert "Deleted 1" in capsys.readouterr().out
+
+    def test_rejects_a_nonsensical_window(self, capsys):
+        from app.scripts import prune_audit_logs
+
+        # Refused rather than clamped: "--days 0" is somebody expecting the
+        # table emptied, and quietly keeping a day would look like a no-op.
+        assert prune_audit_logs.main(["--days", "0"]) == 1
+        assert "at least 1 day" in capsys.readouterr().err
