@@ -115,3 +115,77 @@ def test_groups_subscriptions_by_status(client, db_session, admin):
 def test_absent_statuses_are_omitted_rather_than_zeroed(client, admin):
     # A status added to the enum later needs no change to this endpoint.
     assert _overview(client, admin)["subscriptions_by_status"] == {}
+
+
+class TestSecurityFigures:
+    """The security half of "is anything obviously wrong right now".
+
+    Both figures are here rather than on the audit endpoints because an
+    operator checking on a deployment should not have to know that a
+    separate route exists before they can see somebody spraying the login
+    endpoint.
+    """
+
+    def test_a_quiet_deployment_reports_zero(self, client, admin):
+        body = _overview(client, admin)
+
+        assert body["failed_logins_last_hour"] == 0
+
+    def test_refused_sign_ins_are_counted(self, client, db_session, admin):
+        client.post(
+            "/api/v1/auth/register",
+            json={"email": "target@example.com", "password": PASSWORD},
+        )
+        for _ in range(3):
+            client.post(
+                "/api/v1/auth/login",
+                json={"email": "target@example.com", "password": "wrong-password"},
+            )
+
+        assert _overview(client, admin)["failed_logins_last_hour"] == 3
+
+    def test_attempts_against_unknown_addresses_count_too(self, client, admin):
+        client.post(
+            "/api/v1/auth/login",
+            json={"email": "nobody@example.com", "password": "wrong-password"},
+        )
+
+        # A spray is mostly misses; counting only the hits would hide it.
+        assert _overview(client, admin)["failed_logins_last_hour"] == 1
+
+    def test_older_refusals_fall_out_of_the_window(self, client, db_session, admin):
+        from app.models.audit_log import AuditAction, AuditLog
+
+        db_session.add(
+            AuditLog(
+                action=AuditAction.LOGIN_FAILED.value,
+                outcome="failure",
+                context={},
+                created_at=datetime.now(UTC) - timedelta(hours=3),
+            )
+        )
+        db_session.commit()
+
+        body = _overview(client, admin)
+
+        # A total that only ever goes up answers nothing; the question is
+        # whether somebody is trying accounts now.
+        assert body["failed_logins_last_hour"] == 0
+        assert body["audit_entries"] > 0
+
+    def test_the_trail_size_is_reported_for_the_prune(self, client, admin):
+        before = _overview(client, admin)["audit_entries"]
+
+        client.post(
+            "/api/v1/auth/register",
+            json={"email": "counted@example.com", "password": PASSWORD},
+        )
+
+        # A figure far above what the retention window should hold is how an
+        # operator finds out the scheduled prune stopped running.
+        assert _overview(client, admin)["audit_entries"] > before
+
+    def test_a_member_still_cannot_read_it(self, client, db_session):
+        member = _make_user(client, db_session, "not-an-admin@example.com")
+
+        assert client.get("/api/v1/admin/overview", headers=member).status_code == 403

@@ -17,6 +17,7 @@ from app.schemas.user import UserRead, UserRoleUpdate, UserStatusUpdate
 from app.services.alerts import Severity, get_alert_router, notify
 from app.services.analytics_service import record_event
 from app.services.api_key_service import count_keys
+from app.services.audit_service import count_entries, failed_login_count
 from app.services.audit_service import record as record_audit
 from app.services.session_service import count_all_active_sessions, count_sessions
 
@@ -63,6 +64,8 @@ def overview(
         total_sessions=count_sessions(db),
         active_sessions=count_all_active_sessions(db),
         subscriptions_by_status=by_status,
+        failed_logins_last_hour=failed_login_count(db, hours=1),
+        audit_entries=count_entries(db),
     )
 
 

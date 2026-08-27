@@ -45,3 +45,13 @@ class AdminOverview(BaseModel):
     # Keyed by SubscriptionStatus. Absent statuses mean zero rather than
     # being reported as zero, so a status added later needs no change here.
     subscriptions_by_status: dict[str, int]
+
+    # The security half of "is anything obviously wrong right now". Refused
+    # sign-ins over a short window rather than a total, because the total is
+    # a number that only ever goes up and so answers nothing: what an
+    # operator wants to know is whether somebody is trying accounts *now*.
+    failed_logins_last_hour: int
+    # The trail's own size, for the question the retention prune answers. A
+    # figure far above what the window should hold means the scheduled prune
+    # has not been running.
+    audit_entries: int
