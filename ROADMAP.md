@@ -66,6 +66,9 @@ this note once that happens and the box is checked.
 - [x] Revocable sign-in sessions: refresh-token rotation, a logout endpoint,
       "sign out my other devices", and password reset ending every session
 - [x] Admin overview endpoint (accounts, credentials, subscriptions at a glance)
+- [x] Security audit trail: every sign-in and refusal, credential and role
+      change recorded, readable by the account holder at
+      `/dashboard/security` and searchable across accounts by an admin
 
 ## Post-PRD — Maintenance mode
 - [x] Dependency update cadence (Dependabot, weekly + grouped)

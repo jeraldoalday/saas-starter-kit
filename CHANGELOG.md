@@ -90,6 +90,36 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `python -m app.scripts.prune_usage_events`) deletes events past
   `ANALYTICS_RETENTION_DAYS`. Run it on a schedule; the table is append-only
   otherwise.
+- **Security audit trail.** Every security-relevant event now gets a row in
+  `audit_logs`: sign-ins and refused sign-ins, keys and devices coming and
+  going, roles granted, accounts switched off and on, data exported, account
+  erased. An account reads its own history at `GET /api/v1/audit/me` and at
+  `/dashboard/security`; an administrator searches across accounts at
+  `GET /api/v1/audit` (filterable by action, outcome, account and window)
+  and reads one screenful at `GET /api/v1/audit/summary`.
+
+  Deliberately a separate table from `usage_events`. Analytics records
+  successes for the team and `ANALYTICS_ENABLED` switches it off; the audit
+  trail records the refusals too, for the account holder and for whoever is
+  reconstructing an incident, and no analytics kill-switch disables it.
+
+  A failed sign-in is attributed to the account when the address is one you
+  hold, so the owner sees the attempt in their own history. The address
+  itself is never stored: an attempt against an unregistered address leaves
+  an unattributed row instead, so the table cannot become an inventory of
+  every string typed into an email box, nor an enumeration oracle. The
+  owner's view says "by another account" rather than naming the
+  administrator who acted; the admin view names both parties.
+
+  Reading a trail requires a session JWT. A leaked API key cannot, for the
+  reason it cannot manage keys or sessions.
+- **`make prune-audit-logs`** deletes trail past `AUDIT_RETENTION_DAYS`
+  (default 180). `make prune` now runs all four retention jobs.
+- **Security figures on the admin overview.** `GET /api/v1/admin/overview`
+  reports `failed_logins_last_hour` — refusals across every account, so a
+  spray is visible without opening the trail — and `audit_entries`, whose
+  drifting far above the retention window is how you find out the scheduled
+  prune stopped running.
 
 ### Fixed
 
@@ -139,6 +169,18 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Data export and erasure now cover usage events.** An access request
   returns them, and deleting an account removes them explicitly rather than
   relying on a foreign key that SQLite does not enforce.
+- **Data export and erasure cover the audit trail too.** An access request
+  returns the account's own entries — its security history is the part
+  people most often ask for — but never the entries where it was the actor,
+  since those describe somebody else's account. Erasure deletes the rows
+  where the account is the subject and disowns the ones where it was the
+  actor, so deleting an administrator does not erase the record of what
+  they did to other people's accounts.
+- **The admin overview no longer loads every session row.** It counted
+  active sessions by fetching the whole of `auth_sessions` and summing a
+  property in Python — on the one endpoint whose cost scales with the entire
+  deployment. It is a `COUNT` with a `WHERE` clause now, like every other
+  figure on that response.
 
 ### Changed
 
@@ -149,7 +191,17 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Run `alembic upgrade head`. Migration `0005` creates `usage_events`;
   migration `0006` folds existing user emails to lowercase; migration `0007`
-  creates `api_keys`; migration `0008` creates `auth_sessions`.
+  creates `api_keys`; migration `0008` creates `auth_sessions`; migration
+  `0009` creates `audit_logs`.
+- **Install the audit prune alongside the others.** `audit_logs` is
+  append-only, so add `python -m app.scripts.prune_audit_logs` to the
+  scheduled retention job (see `docs/DEPLOYMENT.md`). Its window is
+  `AUDIT_RETENTION_DAYS`, separate from the session one on purpose: how long
+  a security trail is kept is a different policy decision from how long a
+  dead session row is.
+- The trail starts empty. Nothing before this upgrade is recorded, and there
+  is nothing to backfill from — `usage_events` never held the refusals, which
+  is most of what the trail is for.
 - **Everyone is signed out by this upgrade.** Refresh tokens issued before
   migration `0008` have no session row, and `POST /api/v1/auth/refresh` now
   requires one, so outstanding refresh tokens stop working and users log in

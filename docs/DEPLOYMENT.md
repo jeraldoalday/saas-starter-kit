@@ -151,17 +151,25 @@ fly machine run --app saas-backend \
   --command "python -m app.scripts.prune_usage_events"
 ```
 
-Revoked API keys and dead sign-in sessions need the same treatment, and all
-three can share one machine:
+Revoked API keys, dead sign-in sessions and the security audit trail need
+the same treatment, and all four can share one machine:
 
 ```bash
 fly machine run --app saas-backend \
   --schedule daily \
-  --command "sh -c 'python -m app.scripts.prune_usage_events && python -m app.scripts.prune_api_keys && python -m app.scripts.prune_sessions'"
+  --command "sh -c 'python -m app.scripts.prune_usage_events && python -m app.scripts.prune_api_keys && python -m app.scripts.prune_sessions && python -m app.scripts.prune_audit_logs'"
 ```
+
+`make prune` runs the same four locally.
 
 `prune_sessions` also clears spent email-verification and password-reset
 tokens, which accumulate one per signup and one per reset request.
+
+`prune_audit_logs` keeps its own window (`AUDIT_RETENTION_DAYS`, default
+180) rather than sharing the session one, because how long a security trail
+is kept is a separate policy decision from how long a dead session row is.
+Watch `audit_entries` on `/api/v1/admin/overview`: a figure far above what
+the window should hold means this job has stopped running.
 
 Check what any of them would remove first with `--dry-run`, e.g.
 `fly ssh console --app saas-backend -C "python -m app.scripts.prune_sessions --dry-run"`.

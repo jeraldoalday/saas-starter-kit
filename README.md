@@ -15,6 +15,7 @@ isn't paying for dead weight.
 | Backend   | Python 3.11+, FastAPI, SQLAlchemy 2.0, Alembic, Postgres |
 | Frontend  | Node.js 20+, React 19 + Vite, React Router, TypeScript, Tailwind |
 | Auth      | JWT access tokens, revocable refresh sessions, bcrypt hashing, API keys |
+| Audit     | Append-only security trail, owner-readable and admin-searchable |
 | Billing   | Stripe webhook + subscription model (stubbed, wired up)  |
 | Infra     | Docker Compose (Postgres + backend + nginx-served frontend) |
 | CI        | GitHub Actions (lint + test, backend and frontend)        |
@@ -25,11 +26,11 @@ isn't paying for dead weight.
 .
 ├── backend/            FastAPI service
 │   ├── app/
-│   │   ├── api/v1/      versioned routes (health, auth, users, api keys, sessions, billing)
+│   │   ├── api/v1/      versioned routes (health, auth, users, api keys, sessions, audit, billing)
 │   │   ├── core/        settings + security (hashing, JWT)
 │   │   ├── models/      SQLAlchemy models
 │   │   ├── schemas/     Pydantic request/response schemas
-│   │   ├── services/    business logic (auth, billing, analytics, alerts)
+│   │   ├── services/    business logic (auth, billing, analytics, audit, alerts)
 │   │   └── scripts/     operational CLIs (Stripe sync, retention pruning)
 │   ├── migrations/      Alembic migrations
 │   └── tests/           pytest suite
@@ -39,7 +40,7 @@ isn't paying for dead weight.
 │   └── src/
 │       ├── main.tsx      mounts React and BrowserRouter
 │       ├── App.tsx       route table
-│       ├── pages/        Landing, Login, Register, Dashboard, API keys, Sessions
+│       ├── pages/        Landing, Login, Register, Dashboard, API keys, Sessions, Security
 │       ├── components/   UI primitives + feature components + ProtectedRoute
 │       ├── lib/          API client, auth/analytics helpers, types
 │       ├── hooks/        client hooks (useAuth)
@@ -217,6 +218,51 @@ curl -X POST https://api.example.com/api/v1/sessions/revoke-all \
   every device and keep the account.
 - Only the SHA-256 digest of each refresh token is stored, so a leaked
   database yields digests and no way to use them.
+
+### Security audit trail
+
+Every security-relevant thing that happens to an account gets a row in
+`audit_logs`: sign-ins and refused sign-ins, keys and devices coming and
+going, roles granted, accounts switched off. The account's owner reads their
+own trail at `/dashboard/security`; an administrator searches across
+accounts.
+
+```bash
+# My own history, newest first.
+curl "https://api.example.com/api/v1/audit/me?limit=25" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# Every refused sign-in in the last day (admin).
+curl "https://api.example.com/api/v1/audit?outcome=failure&action=auth.login_failed&days=1" \
+  -H "Authorization: Bearer $ADMIN_ACCESS_TOKEN"
+
+# One screenful of security activity (admin).
+curl "https://api.example.com/api/v1/audit/summary?days=7" \
+  -H "Authorization: Bearer $ADMIN_ACCESS_TOKEN"
+```
+
+- **Distinct from usage analytics on purpose.** `usage_events` records
+  successes, for the team, and `ANALYTICS_ENABLED` can switch it off.
+  `audit_logs` records the refusals too, for the account holder and for
+  whoever is reconstructing an incident, and no analytics kill-switch
+  disables it.
+- **Failed sign-ins are attributed when the address is one we hold**, so
+  "three failed attempts from an IP I don't recognise" appears in the
+  owner's own trail. An attempt against an address nobody registered leaves
+  an unattributed row — the address itself is never stored, so the table
+  cannot become an inventory of every string typed into an email box, nor an
+  enumeration oracle for whoever can read it.
+- **The owner's view never names the administrator** who acted on them, only
+  that somebody did. The admin view names both parties, because correlating
+  one person's actions across accounts is what incident reconstruction is.
+- **Reading a trail needs a session JWT.** Like session and key management, a
+  leaked API key cannot: this history is a list of the addresses someone
+  signs in from and a map of when they are not watching.
+- A dropped write is logged and raised through the on-call alert router,
+  because a gap in the trail is invisible to whoever reads it later.
+- `make prune-audit-logs` clears entries past `AUDIT_RETENTION_DAYS`
+  (default 180 — longer than the session window, shorter than the analytics
+  one).
 
 ### API keys
 
