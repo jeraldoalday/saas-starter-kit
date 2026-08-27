@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
-import { DashboardShell } from "@/components/DashboardShell";
+import { DashboardShell, NAV_ITEMS } from "@/components/DashboardShell";
 import type { User } from "@/lib/types";
 
 const currentUser: User = {
@@ -52,14 +52,26 @@ describe("DashboardShell", () => {
   it("links to every dashboard route", () => {
     renderShell();
 
-    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute(
-      "href",
-      "/dashboard"
-    );
-    expect(screen.getByRole("link", { name: "API keys" })).toHaveAttribute(
-      "href",
-      "/dashboard/api-keys"
-    );
+    // Driven off NAV_ITEMS rather than a hardcoded list. Restating the
+    // links here would mean the test passes whatever the header actually
+    // contains, which is the opposite of what a nav test is for: adding a
+    // section with a typo'd destination could not fail it.
+    for (const item of NAV_ITEMS) {
+      expect(screen.getByRole("link", { name: item.label })).toHaveAttribute(
+        "href",
+        item.to
+      );
+    }
+  });
+
+  it("offers a link for every section and no others", () => {
+    renderShell();
+
+    const labels = screen
+      .getAllByRole("link")
+      .map((link) => link.textContent);
+
+    expect(labels).toEqual(NAV_ITEMS.map((item) => item.label));
   });
 
   it("navigates to a nested route from the nav", () => {

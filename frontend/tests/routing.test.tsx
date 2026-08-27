@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { App } from "@/App";
+import { NAV_ITEMS } from "@/components/DashboardShell";
 
 function renderAt(path: string) {
   return render(
@@ -42,8 +43,21 @@ describe("App routing", () => {
     expect(screen.getByRole("heading", { name: "Log in" })).toBeInTheDocument();
   });
 
-  it("guards the API keys page too", () => {
-    renderAt("/dashboard/api-keys");
-    expect(screen.getByRole("heading", { name: "Log in" })).toBeInTheDocument();
+  it.each(NAV_ITEMS.map((item) => item.to))(
+    "guards %s behind a session",
+    (path) => {
+      // Every destination the header offers, not a sample of them: a new
+      // section added outside the ProtectedRoute element would otherwise
+      // ship an unauthenticated page and no test would notice.
+      renderAt(path);
+      expect(screen.getByRole("heading", { name: "Log in" })).toBeInTheDocument();
+    }
+  );
+
+  it("sends an unknown dashboard path back to the landing page", () => {
+    renderAt("/dashboard/no-such-section");
+    expect(
+      screen.getByRole("heading", { name: /ship your saas/i })
+    ).toBeInTheDocument();
   });
 });
