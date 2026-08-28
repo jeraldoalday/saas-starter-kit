@@ -1,4 +1,4 @@
-.PHONY: dev-backend dev-frontend test test-backend test-frontend lint migrate up down sync-stripe-catalog prune-usage-events prune-api-keys prune-sessions prune-audit-logs prune check-health-and-alert
+.PHONY: dev-backend dev-frontend test test-backend test-frontend lint migrate up down sync-stripe-catalog prune-usage-events prune-api-keys prune-sessions prune-audit-logs prune check-health-and-alert check-migration-drift
 
 dev-backend:
 	cd backend && uvicorn app.main:app --reload
@@ -41,6 +41,11 @@ prune: prune-usage-events prune-api-keys prune-sessions prune-audit-logs
 
 check-health-and-alert:
 	cd backend && python -m app.scripts.check_health_and_alert
+
+# Needs a database already at head; CI runs it against Postgres after
+# `alembic upgrade head`.
+check-migration-drift:
+	cd backend && python -m app.scripts.check_migration_drift
 
 up:
 	docker compose up --build

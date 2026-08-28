@@ -80,3 +80,11 @@ jobs:
         # A downgrade that leaves an index or a type behind only shows up on
         # the way back up.
         run: alembic upgrade head
+
+      - name: Check the migrations match the models
+        # The two jobs above have a gap between them: the unit suite builds
+        # its schema from the models with create_all, and the steps above
+        # prove the migrations run. Neither compares the two, so a model
+        # changed without a matching migration passes both and is found by
+        # the first query against a column production does not have.
+        run: python -m app.scripts.check_migration_drift
