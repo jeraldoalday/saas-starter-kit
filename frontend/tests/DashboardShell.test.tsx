@@ -2,7 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
-import { DashboardShell, NAV_ITEMS } from "@/components/DashboardShell";
+import { DashboardShell } from "@/components/DashboardShell";
+import { NAV_ITEMS } from "@/lib/navigation";
 import type { User } from "@/lib/types";
 
 const currentUser: User = {

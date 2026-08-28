@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { App } from "@/App";
-import { NAV_ITEMS } from "@/components/DashboardShell";
+import { NAV_ITEMS } from "@/lib/navigation";
 
 function renderAt(path: string) {
   return render(

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/Button";
+import { NAV_ITEMS } from "@/lib/navigation";
 import type { User } from "@/lib/types";
 
 interface DashboardShellProps {
@@ -9,22 +10,6 @@ interface DashboardShellProps {
   onLogout: () => void;
   children: ReactNode;
 }
-
-/**
- * Routes reachable from the header, in order.
- *
- * Exported so tests can enumerate it rather than restating it. A test that
- * hardcodes the links it expects passes whatever the header actually
- * contains, which is the opposite of what a nav test is for.
- */
-export const NAV_ITEMS = [
-  // `end` so /dashboard stops matching once a nested route is active;
-  // without it the Overview link would stay highlighted on every child page.
-  { to: "/dashboard", label: "Overview", end: true },
-  { to: "/dashboard/api-keys", label: "API keys", end: false },
-  { to: "/dashboard/sessions", label: "Sessions", end: false },
-  { to: "/dashboard/security", label: "Security", end: false },
-] as const;
 
 export function DashboardShell({ user, onLogout, children }: DashboardShellProps) {
   const navigate = useNavigate();
