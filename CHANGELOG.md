@@ -120,6 +120,31 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spray is visible without opening the trail — and `audit_entries`, whose
   drifting far above the retention window is how you find out the scheduled
   prune stopped running.
+- **Plans now grant different ceilings, and the ceilings are enforced.**
+  Free accounts get 2 API keys, 3 signed-in devices, 10,000 events a month
+  and 30 days of security history; a paid subscription raises those to 20,
+  10, 1,000,000 and 180 days. `GET /api/v1/plan` reports the plan, every
+  quota and what is left of it, and `GET /api/v1/plan/catalog` lists what is
+  on offer with the caller's plan marked. Both are readable with an API key
+  as well as a session, so a programmatic client can back off before it
+  starts being refused. The dashboard renders them as meters that warn
+  before a limit is reached rather than only after.
+  The plan is derived from the subscription's status rather than stored, so
+  a cancellation takes effect when the webhook lands. `active` and
+  `trialing` grant the paid plan; everything else, `past_due` included,
+  falls back to Free.
+- **Event ingest reports what it actually stored.** `POST
+  /api/v1/analytics/events` now answers with `dropped` and `remaining`
+  alongside `recorded`. A batch that overshoots the monthly allowance is
+  clipped rather than refused — a client flushing a fixed-size buffer would
+  otherwise lose the room it still had — and only a batch with no room at
+  all gets a `429`, carrying a `Retry-After` that points at the first of the
+  next month. The bundled SPA honours it and stops flushing until then.
+- **The owner-facing audit page says how far back it reaches.**
+  `GET /api/v1/audit/me` now carries `history_days`, and bounds both the
+  page and its total to that window. Rows are still kept for
+  `AUDIT_RETENTION_DAYS` regardless of plan, so upgrading reveals history
+  that already exists.
 
 ### Fixed
 
@@ -181,6 +206,18 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   property in Python — on the one endpoint whose cost scales with the entire
   deployment. It is a `COUNT` with a `WHERE` clause now, like every other
   figure on that response.
+- **Data exports were missing every signed-in device.** `auth_sessions`
+  arrived after `GET /api/v1/users/me/export` was written and no branch was
+  ever added for it, so a subject access request came back without the one
+  table recording an IP address and a User-Agent per device. Metadata only —
+  the token digest is a credential and stays out, like the password hash.
+  Deletion was already correct; this was the read side.
+- **Retention jobs deleted the wrong rows when handed a non-UTC clock.**
+  Every prune helper takes an optional `now`, and bound it straight into a
+  SQL comparison. SQLite drops tzinfo when binding, so an aware datetime in
+  another zone was compared as though its local reading were UTC — off by
+  the zone's offset either side of where the window falls. Deployments whose
+  scheduled job passes no clock at all were never affected.
 
 ### Changed
 
@@ -189,6 +226,19 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Upgrade notes
 
+- **Free accounts are now capped where they were not before.** An existing
+  account with no live subscription is on the Free plan, so it may hold 2
+  API keys rather than 20 and keep 3 devices signed in rather than 10. Keys
+  already minted keep working — nothing is revoked — but creating another
+  past the ceiling is refused until one is revoked or the account
+  subscribes. A `past_due` subscription counts as Free, which is a change
+  for any deployment carrying accounts in dunning.
+- **Clients that read the ingest response should read `dropped`.** A `202`
+  no longer means the whole batch was stored. Ignoring the field is safe but
+  silently lossy once an account reaches its monthly allowance.
+- No new environment variables. Plan ceilings are code, in
+  `backend/app/core/entitlements.py` — change them there and the tests will
+  tell you if a plan promises more than the service backstops will give.
 - Run `alembic upgrade head`. Migration `0005` creates `usage_events`;
   migration `0006` folds existing user emails to lowercase; migration `0007`
   creates `api_keys`; migration `0008` creates `auth_sessions`; migration
