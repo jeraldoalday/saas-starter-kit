@@ -79,8 +79,20 @@ describe("SecurityPage", () => {
     expect(screen.getByText("203.0.113.7")).toBeInTheDocument();
   });
 
-  it("says how much of the trail is on screen", async () => {
-    fetchAuditPageMock.mockResolvedValue(page({ total: 80 }));
+  it("says how much of the trail is on screen, and how far back it reaches", async () => {
+    fetchAuditPageMock.mockResolvedValue(page({ total: 80, history_days: 30 }));
+
+    renderPage();
+
+    // The window is part of the sentence: a trail that simply stops reads
+    // to its owner as rows somebody deleted.
+    expect(
+      await screen.findByText("Showing 1 of 80 from the last 30 days")
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about a window when the plan has no limit", async () => {
+    fetchAuditPageMock.mockResolvedValue(page({ total: 80, history_days: null }));
 
     renderPage();
 
