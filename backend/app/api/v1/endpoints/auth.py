@@ -40,6 +40,7 @@ from app.services.auth_service import (
     issue_token_pair,
     register_user,
 )
+from app.services.entitlement_service import entitlements_for
 from app.services.password_reset_service import request_password_reset, reset_password
 from app.services.session_service import authenticate as authenticate_session
 from app.services.session_service import revoke_session, rotate, start_session
@@ -237,6 +238,10 @@ def login(
         tokens.refresh_token,
         user_agent=user_agent(request),
         ip_address=client_ip(request),
+        # How many devices this account's plan keeps signed in at once.
+        # Resolved here rather than inside the service so the session layer
+        # stays unaware of billing: it takes a number, not a subscription.
+        max_active_sessions=entitlements_for(user).max_active_sessions,
     )
     return tokens
 

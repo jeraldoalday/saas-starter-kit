@@ -40,11 +40,16 @@ from app.services.api_key_service import hash_key
 
 logger = logging.getLogger("app.sessions")
 
-# A ceiling per account. Not a security boundary — it is a bound on how far
-# one account's session list can grow when a client re-logs in instead of
-# refreshing. Reaching it retires the oldest session rather than refusing
-# the login: failing a correct password because of housekeeping would be a
-# worse bug than the unbounded table it prevents.
+# The hard ceiling per account. Not a security boundary — it is a bound on
+# how far one account's session list can grow when a client re-logs in
+# instead of refreshing. Reaching it retires the oldest session rather than
+# refusing the login: failing a correct password because of housekeeping
+# would be a worse bug than the unbounded table it prevents.
+#
+# The plan an account is on carries its own, lower cap (see
+# app.core.entitlements), which `start_session` takes as an argument and
+# clamps to this. Same division as API keys: the plan is the product's
+# answer, this is the deployment's.
 MAX_ACTIVE_SESSIONS_PER_USER = 10
 
 
@@ -96,6 +101,20 @@ def _truncate(value: str | None, limit: int) -> str | None:
     return stripped[:limit]
 
 
+def effective_session_cap(max_active_sessions: int | None) -> int:
+    """The cap that actually binds, given a plan's asking price.
+
+    Mirrors `api_key_service.effective_key_limit`, and for the same reasons:
+    None means no plan limit to impose, and a plan asking for more than the
+    backstop is clamped rather than believed. Floored at one, because a cap
+    of zero would retire the session being created and sign the user out in
+    the act of signing them in.
+    """
+    if max_active_sessions is None:
+        return MAX_ACTIVE_SESSIONS_PER_USER
+    return max(min(max_active_sessions, MAX_ACTIVE_SESSIONS_PER_USER), 1)
+
+
 def start_session(
     db: Session,
     user: User,
@@ -103,9 +122,16 @@ def start_session(
     *,
     user_agent: str | None = None,
     ip_address: str | None = None,
+    max_active_sessions: int | None = None,
     now: datetime | None = None,
 ) -> AuthSession:
-    """Record a new signed-in device holding `raw_token`."""
+    """Record a new signed-in device holding `raw_token`.
+
+    `max_active_sessions` is the plan's cap, which the login endpoint
+    resolves and passes down. Reaching it still retires the oldest device
+    rather than refusing the login — a downgrade must not be able to lock
+    somebody out of an account they hold the password to.
+    """
     now = now or datetime.now(UTC)
 
     session = AuthSession(
@@ -121,7 +147,7 @@ def start_session(
     db.commit()
     db.refresh(session)
 
-    _enforce_session_cap(db, user, now=now)
+    _enforce_session_cap(db, user, cap=effective_session_cap(max_active_sessions), now=now)
 
     logger.info(
         "session started",
@@ -130,10 +156,10 @@ def start_session(
     return session
 
 
-def _enforce_session_cap(db: Session, user: User, *, now: datetime) -> None:
-    """Retire the oldest sessions past MAX_ACTIVE_SESSIONS_PER_USER."""
+def _enforce_session_cap(db: Session, user: User, *, cap: int, now: datetime) -> None:
+    """Retire this account's oldest sessions until only `cap` remain."""
     active = [s for s in _sessions_for(db, user) if s.is_usable(now)]
-    excess = len(active) - MAX_ACTIVE_SESSIONS_PER_USER
+    excess = len(active) - cap
     if excess <= 0:
         return
 
@@ -143,7 +169,7 @@ def _enforce_session_cap(db: Session, user: User, *, now: datetime) -> None:
     db.commit()
     logger.info(
         "retired sessions over the per-account cap",
-        extra={"user_id": str(user.id), "retired": excess},
+        extra={"user_id": str(user.id), "retired": excess, "cap": cap},
     )
 
 
@@ -367,6 +393,7 @@ __all__ = [
     "count_active_sessions",
     "count_all_active_sessions",
     "count_sessions",
+    "effective_session_cap",
     "hash_refresh_token",
     "list_sessions",
     "purge_expired_sessions",
