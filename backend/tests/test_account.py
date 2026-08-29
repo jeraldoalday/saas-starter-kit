@@ -1,4 +1,5 @@
 from app.models.api_key import ApiKey
+from app.models.auth_session import AuthSession
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.token import OneTimeToken, TokenPurpose
 from app.models.usage_event import UsageEvent
@@ -217,6 +218,37 @@ def test_export_lists_api_keys_without_their_secrets(client, db_session):
     serialized = str(body)
     assert raw_key not in serialized
     assert api_key.token_hash not in serialized
+
+
+def test_export_lists_signed_in_devices_without_their_tokens(client, db_session):
+    email = "sessions-export@example.com"
+    headers = _auth(client, email=email)
+    user = db_session.query(User).filter(User.email == email).one()
+    session = db_session.query(AuthSession).filter(AuthSession.user_id == user.id).one()
+
+    body = client.get("/api/v1/users/me/export", headers=headers).json()
+
+    # A session row holds an IP address and a User-Agent per device, which
+    # is personal data by any reading. The table arrived after the first
+    # version of this export and was missing from it — the drift the module
+    # docstring warns about, which this test now pins.
+    exported = body["sessions"]
+    assert len(exported) == 1
+    assert exported[0]["ip_address"] == session.ip_address
+    assert exported[0]["created_at"] is not None
+    # The digest is a credential, excluded for the same reason the password
+    # hash and the API key digests are.
+    assert session.token_hash not in str(body)
+
+
+def test_export_reports_no_sessions_as_an_empty_list(client, db_session):
+    email = "no-sessions@example.com"
+    headers = _auth(client, email=email)
+    user = db_session.query(User).filter(User.email == email).one()
+    db_session.query(AuthSession).filter(AuthSession.user_id == user.id).delete()
+    db_session.commit()
+
+    assert client.get("/api/v1/users/me/export", headers=headers).json()["sessions"] == []
 
 
 def test_export_reports_no_keys_as_an_empty_list(client):

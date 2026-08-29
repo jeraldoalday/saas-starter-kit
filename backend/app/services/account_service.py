@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.security import verify_password
 from app.models.api_key import ApiKey
 from app.models.audit_log import AuditLog
+from app.models.auth_session import AuthSession
 from app.models.subscription import Subscription
 from app.models.token import OneTimeToken
 from app.models.usage_event import UsageEvent
@@ -46,6 +47,12 @@ def export_user_data(db: Session, user: User) -> dict[str, Any]:
         db.query(ApiKey)
         .filter(ApiKey.user_id == user.id)
         .order_by(ApiKey.created_at.desc())
+        .all()
+    )
+    sessions = (
+        db.query(AuthSession)
+        .filter(AuthSession.user_id == user.id)
+        .order_by(AuthSession.created_at.desc())
         .all()
     )
     # Only rows where this account is the *subject*. Rows where they were
@@ -103,6 +110,30 @@ def export_user_data(db: Session, user: User) -> dict[str, Any]:
                 "revoked_at": key.revoked_at.isoformat() if key.revoked_at else None,
             }
             for key in api_keys
+        ],
+        # Sessions hold an IP address and a User-Agent per device, which is
+        # personal data by any reading, and the table postdates the first
+        # version of this export — exactly the drift the module docstring
+        # warns about. Metadata only: the digest is a credential, excluded
+        # for the same reason the password hash and the key digests are.
+        "sessions": [
+            {
+                "created_at": (
+                    session.created_at.isoformat() if session.created_at else None
+                ),
+                "last_used_at": (
+                    session.last_used_at.isoformat() if session.last_used_at else None
+                ),
+                "expires_at": (
+                    session.expires_at.isoformat() if session.expires_at else None
+                ),
+                "revoked_at": (
+                    session.revoked_at.isoformat() if session.revoked_at else None
+                ),
+                "user_agent": session.user_agent,
+                "ip_address": session.ip_address,
+            }
+            for session in sessions
         ],
         # The security trail is data held about them too, and it is the
         # part they are most likely to be asking for: every sign-in, from
