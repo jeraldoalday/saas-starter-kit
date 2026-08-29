@@ -85,6 +85,16 @@ class AuditPage(BaseModel):
     total: int
     limit: int
     offset: int
+    history_days: int | None = Field(
+        default=None,
+        description=(
+            "How far back this account's plan lets it read, in days, or "
+            "null on a plan with no limit. Served so the interface can say "
+            "why the trail stops where it does — an account that sees 30 "
+            "days of history and no explanation assumes the older rows were "
+            "deleted."
+        ),
+    )
 
 
 class AdminAuditPage(BaseModel):

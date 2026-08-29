@@ -25,6 +25,7 @@ from app.services.audit_service import (
     failed_login_count,
     list_entries,
 )
+from app.services.entitlement_service import entitlements_for
 
 # Gated on get_current_user (a session JWT) rather than on the key-or-session
 # dependency, for the reason api_keys and sessions give: a leaked API key can
@@ -47,15 +48,34 @@ def read_my_trail(
     took against it appears here. That is the point of showing someone their
     own trail: an unexplained role change or deactivation is exactly the row
     they need to find without having to ask anybody.
+
+    How far back it reaches is a plan entitlement. That bounds *reading*,
+    not recording: rows are kept for AUDIT_RETENTION_DAYS regardless of who
+    is paying, so upgrading reveals history that already exists rather than
+    starting a clock. The window is reported back in `history_days`, because
+    a trail that stops after thirty days with no explanation reads as data
+    somebody deleted.
+
+    The floor is applied to the count as well as to the page. Paginating a
+    window against a total for the whole table is how a listing ends up
+    promising a page nine that returns nothing.
     """
+    history_days = entitlements_for(current_user).audit_history_days
+    since = (
+        datetime.now(UTC) - timedelta(days=history_days)
+        if history_days is not None
+        else None
+    )
+
     entries = list_entries(
-        db, user_id=current_user.id, limit=limit, offset=offset
+        db, user_id=current_user.id, since=since, limit=limit, offset=offset
     )
     return AuditPage(
         entries=[AuditEntryRead.from_entry(entry) for entry in entries],
-        total=count_entries(db, user_id=current_user.id),
+        total=count_entries(db, user_id=current_user.id, since=since),
         limit=limit,
         offset=offset,
+        history_days=history_days,
     )
 
 

@@ -52,6 +52,22 @@ def member(client):
     return _account(client)
 
 
+def _fill_trail(client, member, pairs=2):
+    """Record `pairs` * 2 rows without running into the key allowance.
+
+    Each key is revoked as soon as it is minted, which both records a second
+    row and frees the slot for the next one. Creating four keys outright
+    would be simpler to read but would depend on the plan's ceiling, and the
+    free tier's is lower than four — this is a test about paging, not about
+    what a plan buys.
+    """
+    for _ in range(pairs):
+        created = client.post(
+            "/api/v1/api-keys", json={"name": "key"}, headers=_auth(member)
+        ).json()
+        client.delete(f"/api/v1/api-keys/{created['id']}", headers=_auth(member))
+
+
 @pytest.fixture
 def admin(client, db_session):
     return _account(
@@ -130,8 +146,9 @@ def test_an_api_key_cannot_read_the_trail(client, member):
 
 
 def test_pagination_reports_a_total_larger_than_the_page(client, member):
-    for _ in range(4):
-        client.post("/api/v1/api-keys", json={"name": "key"}, headers=_auth(member))
+    # Registration and the sign-in that follows it are two rows; the helper
+    # adds four more.
+    _fill_trail(client, member)
 
     body = client.get("/api/v1/audit/me?limit=2", headers=_auth(member)).json()
 
@@ -141,8 +158,7 @@ def test_pagination_reports_a_total_larger_than_the_page(client, member):
 
 
 def test_paging_through_never_repeats_a_row(client, member):
-    for _ in range(4):
-        client.post("/api/v1/api-keys", json={"name": "key"}, headers=_auth(member))
+    _fill_trail(client, member)
 
     first = client.get("/api/v1/audit/me?limit=3", headers=_auth(member)).json()
     second = client.get(
