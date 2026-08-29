@@ -1,11 +1,13 @@
 import uuid
 from dataclasses import asdict
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps_rate_limit import analytics_ingest_rate_limit
 from app.core.config import get_settings
+from app.core.entitlements import remaining as remaining_of
 from app.database import get_db
 from app.deps import get_api_or_session_user, require_admin
 from app.models.usage_event import EventSource
@@ -23,6 +25,7 @@ from app.services.analytics_service import (
     summarize_usage,
     summarize_user_usage,
 )
+from app.services.entitlement_service import event_quota, next_period_start
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -44,6 +47,18 @@ def ingest_events(
     batch was accepted, not that every row landed. `recorded` reports how
     many actually did — zero when analytics is switched off for the
     deployment, which is not an error the client can do anything about.
+
+    Two different ceilings can bite here, and they mean different things.
+    The batch-size limit is about this request being too big to process, so
+    it is a 413 and the client should split and retry immediately. The plan
+    allowance is about the account being out of budget for the month, so it
+    is a 429 with a Retry-After pointing at the reset — retrying sooner
+    cannot succeed.
+
+    An allowance that runs out *mid-batch* clips rather than refuses, for
+    the reason `Quota.allowance` gives: a client flushing a fixed-size
+    buffer would otherwise lose the room it still had. `dropped` is how the
+    client finds out, which is why it must not be ignored.
     """
     settings = get_settings()
     if len(data.events) > settings.analytics_max_batch_size:
@@ -52,13 +67,34 @@ def ingest_events(
             detail=f"At most {settings.analytics_max_batch_size} events per request",
         )
 
+    quota = event_quota(db, current_user)
+    allowed = quota.allowance(len(data.events))
+    if allowed == 0:
+        resets_at = next_period_start()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"{quota}. The allowance resets on "
+                f"{resets_at.date().isoformat()}."
+            ),
+            headers={
+                "Retry-After": str(
+                    max(int((resets_at - datetime.now(UTC)).total_seconds()), 1)
+                )
+            },
+        )
+
     recorded = record_events(
         db,
-        [(event.name, event.properties) for event in data.events],
+        [(event.name, event.properties) for event in data.events[:allowed]],
         user=current_user,
         source=EventSource.FRONTEND,
     )
-    return IngestResponse(recorded=recorded)
+    return IngestResponse(
+        recorded=recorded,
+        dropped=len(data.events) - allowed,
+        remaining=remaining_of(quota.limit, quota.used + recorded),
+    )
 
 
 @router.get("/me", response_model=UsageSummaryRead)

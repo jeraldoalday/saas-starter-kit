@@ -27,7 +27,7 @@ clips the batch and reports what it took — see `allowance_for_events`.
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -104,6 +104,21 @@ class Quota:
     def unlimited(self) -> bool:
         return self.limit is None
 
+    def allowance(self, requested: int) -> int:
+        """How many of `requested` units this quota still has room for.
+
+        Clipping rather than an all-or-nothing verdict, because the caller
+        that needs this — event ingest — flushes a fixed-size buffer: an
+        all-or-nothing answer would refuse every flush once the allowance
+        got within one batch of full, losing the room the account still had.
+
+        Zero is the caller's cue to refuse outright rather than to report a
+        successful write of nothing.
+        """
+        if self.limit is None:
+            return max(requested, 0)
+        return max(min(requested, self.limit - self.used), 0)
+
     def __str__(self) -> str:
         if self.limit is None:
             return f"{self.label} is unlimited on the {self.plan_display_name} plan"
@@ -146,6 +161,20 @@ def month_start(now: datetime | None = None) -> datetime:
     """
     now = now or _now()
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def next_period_start(now: datetime | None = None) -> datetime:
+    """First moment of the *next* UTC calendar month.
+
+    When a spent monthly allowance comes back. Returned to a refused caller
+    as a Retry-After, which is a long time to be told to wait — and is
+    exactly right: retrying sooner cannot succeed, and a client that backs
+    off properly stops hammering an endpoint that has nothing to give it.
+    """
+    start = month_start(now)
+    # Step into the next month by way of the 28th, which every month has:
+    # adding 31 days would skip February entirely.
+    return month_start(start.replace(day=28) + timedelta(days=7))
 
 
 def plan_key_for(user: User) -> str:
@@ -302,10 +331,9 @@ def allowance_for_events(
     with a 429 — there is nothing to accept and saying "accepted 0" would be
     a quieter way of dropping data.
     """
-    quota = event_quota(db, user, entitlements=entitlements, now=now)
-    if quota.limit is None:
-        return requested
-    return max(min(requested, quota.limit - quota.used), 0)
+    return event_quota(db, user, entitlements=entitlements, now=now).allowance(
+        requested
+    )
 
 
 __all__ = [
@@ -321,6 +349,7 @@ __all__ = [
     "entitlements_for",
     "event_quota",
     "month_start",
+    "next_period_start",
     "plan_key_for",
     "quota_snapshot",
     "session_quota",

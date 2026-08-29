@@ -54,7 +54,31 @@ class EventBatchIngest(BaseModel):
 
 
 class IngestResponse(BaseModel):
-    recorded: int
+    """What actually happened to a submitted batch.
+
+    Three numbers rather than one because a batch can be partly accepted:
+    the plan's monthly allowance clips an over-budget flush instead of
+    refusing it, so a client that only read a 202 would believe it had
+    delivered events that were never stored.
+    """
+
+    recorded: int = Field(
+        description="How many events were stored. Zero when analytics is off."
+    )
+    dropped: int = Field(
+        default=0,
+        description=(
+            "How many were turned away because the monthly allowance ran "
+            "out mid-batch. The client should stop flushing until it resets."
+        ),
+    )
+    remaining: int | None = Field(
+        default=None,
+        description=(
+            "Events left in this month's allowance, or null on a plan with "
+            "no ceiling."
+        ),
+    )
 
 
 class DailyCountRead(BaseModel):

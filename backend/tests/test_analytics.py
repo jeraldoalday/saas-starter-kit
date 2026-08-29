@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import get_settings
+from app.core.entitlements import FREE_PLAN
 from app.core.security import hash_password
 from app.models.role import Role
 from app.models.usage_event import EventName, EventSource, UsageEvent
@@ -268,7 +269,13 @@ def test_ingest_records_events_for_the_caller(client, db_session):
     )
 
     assert response.status_code == 202
-    assert response.json() == {"recorded": 1}
+    body = response.json()
+    assert body["recorded"] == 1
+    assert body["dropped"] == 0
+    # The registration and login that got here already spent some of the
+    # month's allowance, so what is left is asserted as a relationship to
+    # the plan's ceiling rather than as a fixed number.
+    assert body["remaining"] < FREE_PLAN.monthly_event_allowance
     stored = db_session.query(UsageEvent).filter(UsageEvent.name == "dashboard.viewed").one()
     assert stored.source == EventSource.FRONTEND.value
 
