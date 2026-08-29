@@ -63,7 +63,7 @@ def ingest_events(
     settings = get_settings()
     if len(data.events) > settings.analytics_max_batch_size:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"At most {settings.analytics_max_batch_size} events per request",
         )
 
