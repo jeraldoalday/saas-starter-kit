@@ -14,7 +14,8 @@ import {
   sortKeys,
 } from "@/lib/api-keys";
 import { trackEvent } from "@/lib/analytics";
-import type { ApiKey, CreatedApiKey } from "@/lib/types";
+import { fetchPlan, formatUsage } from "@/lib/plan";
+import type { ApiKey, CreatedApiKey, Quota } from "@/lib/types";
 
 /** Expiry choices, in days. `null` is "does not expire". */
 const EXPIRY_OPTIONS: { label: string; value: number | null }[] = [
@@ -81,6 +82,10 @@ export function ApiKeysPage() {
   // confirms; anything else cancels. Deliberately not window.confirm, which
   // blocks the event loop and can't be styled or tested.
   const [confirming, setConfirming] = useState<string | null>(null);
+  // The plan's key allowance, or null when the plan could not be loaded.
+  // Null means "say nothing about limits" rather than "no limit": guessing
+  // either way would be worse than leaving the line off.
+  const [quota, setQuota] = useState<Quota | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +96,15 @@ export function ApiKeysPage() {
       setError("Could not load your API keys.");
     } finally {
       setLoading(false);
+    }
+
+    // Fetched separately and swallowed on failure: the allowance is a line
+    // of context, and losing it must not turn a working page into an error.
+    try {
+      const plan = await fetchPlan();
+      setQuota(plan.quotas.find((entry) => entry.key === "api_keys") ?? null);
+    } catch {
+      setQuota(null);
     }
   }, []);
 
@@ -146,6 +160,10 @@ export function ApiKeysPage() {
   }
 
   const sorted = sortKeys(keys);
+  // Disabling the button rather than letting the request 409 — the ceiling
+  // is knowable before the click, and a form that submits only to be
+  // refused teaches nothing about how to fix it.
+  const atLimit = quota?.exhausted ?? false;
 
   return (
     <div className="flex flex-col gap-6">
@@ -192,10 +210,18 @@ export function ApiKeysPage() {
               ))}
             </select>
           </div>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending || atLimit}>
             {pending ? "Creating…" : "Create key"}
           </Button>
         </form>
+
+        {quota && (
+          <p className={`mt-4 text-sm ${atLimit ? "text-amber-400" : "text-neutral-500"}`}>
+            {atLimit
+              ? `You have used all ${quota.limit} keys your plan allows. Revoke one you no longer use, or upgrade.`
+              : `Using ${formatUsage(quota)} keys on your plan.`}
+          </p>
+        )}
 
         {error && (
           <p className="mt-4 text-sm text-red-400" role="alert">

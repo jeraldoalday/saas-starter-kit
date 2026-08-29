@@ -26,6 +26,9 @@ export function SecurityPage() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [more, setMore] = useState(false);
+  // How far back the plan lets this account read, or null for no limit.
+  // Shown because a trail that simply stops reads as rows somebody deleted.
+  const [historyDays, setHistoryDays] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +40,7 @@ export function SecurityPage() {
       setEntries(page.entries);
       setTotal(page.total);
       setMore(hasMorePages(page));
+      setHistoryDays(page.history_days);
       setError(null);
     } catch {
       setError("Could not load your security history.");
@@ -113,6 +117,7 @@ export function SecurityPage() {
           {total > 0 && (
             <span className="text-xs text-neutral-500">
               Showing {entries.length} of {total}
+              {historyDays !== null && ` from the last ${historyDays} days`}
             </span>
           )}
         </div>
