@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 
 import { BillingCard } from "@/components/BillingCard";
+import { PlanCard } from "@/components/PlanCard";
 import type { ProtectedOutletContext } from "@/components/ProtectedRoute";
 import { Card } from "@/components/ui/Card";
 import { UsageCard } from "@/components/UsageCard";
@@ -29,6 +30,8 @@ export function DashboardPage() {
       </Card>
 
       <BillingCard />
+
+      <PlanCard />
 
       <UsageCard />
     </div>
