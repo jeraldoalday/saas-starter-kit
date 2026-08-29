@@ -65,6 +65,12 @@ export interface AuditPage {
   total: number;
   limit: number;
   offset: number;
+  /**
+   * How far back the account's plan lets it read, in days, or null on a
+   * plan with no limit. Shown to the reader, because a trail that stops
+   * after thirty days with no explanation reads as rows somebody deleted.
+   */
+  history_days: number | null;
 }
 
 export interface TokenPair {
@@ -77,6 +83,62 @@ export interface Subscription {
   id: string;
   status: string;
   current_period_end: string | null;
+}
+
+/**
+ * One plan's ceilings, exactly as the catalog defines them.
+ *
+ * Every limit is nullable, and null means *no ceiling* rather than unknown
+ * or zero — so the UI renders "Unlimited" on a null and never has to know a
+ * sentinel number.
+ */
+export interface Entitlements {
+  plan_key: string;
+  display_name: string;
+  max_active_api_keys: number | null;
+  max_active_sessions: number | null;
+  monthly_event_allowance: number | null;
+  audit_history_days: number | null;
+}
+
+/** One ceiling and how much of it this account has spent. */
+export interface Quota {
+  /** Stable identifier: "api_keys" | "sessions" | "events". */
+  key: string;
+  /** Human wording for the thing being counted, from the API. */
+  label: string;
+  limit: number | null;
+  used: number;
+  /** Served rather than subtracted here, so every view clamps alike. */
+  remaining: number | null;
+  exhausted: boolean;
+}
+
+/** The caller's plan, its ceilings, and what is left of each. */
+export interface Plan {
+  entitlements: Entitlements;
+  /** The Stripe status behind the plan, or null if never subscribed. */
+  subscription_status: string | null;
+  quotas: Quota[];
+  /** ISO timestamps bounding the monthly event allowance. */
+  period_start: string;
+  period_end: string;
+}
+
+export interface PlanPrice {
+  /** In the currency's smallest unit — 2900 is $29.00. */
+  unit_amount: number;
+  currency: string;
+  interval: string;
+}
+
+/** One plan on offer: what it buys, what it costs, whether you are on it. */
+export interface PlanCatalogEntry {
+  entitlements: Entitlements;
+  /** Null for the free tier, which is not a Stripe product. */
+  price: PlanPrice | null;
+  description: string | null;
+  is_current: boolean;
 }
 
 export interface ApiError {

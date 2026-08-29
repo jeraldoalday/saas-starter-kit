@@ -34,7 +34,14 @@ function entry(overrides: Partial<AuditEntry> = {}): AuditEntry {
 }
 
 function page(overrides: Partial<AuditPage> = {}): AuditPage {
-  return { entries: [entry()], total: 1, limit: PAGE_SIZE, offset: 0, ...overrides };
+  return {
+    entries: [entry()],
+    total: 1,
+    limit: PAGE_SIZE,
+    offset: 0,
+    history_days: 30,
+    ...overrides,
+  };
 }
 
 function mockFetch(body: unknown, status = 200) {

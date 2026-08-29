@@ -41,6 +41,7 @@ function page(overrides: Partial<AuditPage> = {}): AuditPage {
     total: 1,
     limit: 25,
     offset: 0,
+    history_days: 30,
     ...overrides,
   };
 }
