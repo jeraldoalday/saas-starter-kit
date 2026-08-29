@@ -21,6 +21,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.timeutils import as_utc
 from app.models.usage_event import EventName, EventSource, UsageEvent
 from app.models.user import User
 
@@ -323,8 +324,15 @@ def prune_events(db: Session, *, older_than_days: int, now: datetime | None = No
 
     An append-only table needs somebody to take the other side of the deal.
     Run this on a schedule (see app/scripts/prune_usage_events.py).
+
+    The clock is normalised to UTC before the cutoff is bound. SQLite stores
+    naive wall-clock UTC and its driver ignores tzinfo entirely, so a caller
+    passing an aware datetime in any other zone would have its wall-clock
+    reading compared as though it were UTC — off by the offset, silently,
+    and only on the dialect the tests run on. `count_all_active_sessions`
+    documents the same hazard at length.
     """
-    now = now or _now()
+    now = as_utc(now) or _now()
     cutoff = now - timedelta(days=max(older_than_days, 1))
     deleted = (
         db.query(UsageEvent)

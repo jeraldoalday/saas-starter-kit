@@ -34,6 +34,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.timeutils import as_utc
 from app.models.audit_log import (
     MAX_IP_LENGTH,
     MAX_USER_AGENT_LENGTH,
@@ -283,8 +284,15 @@ def purge_audit_logs(
     than the session one and shorter than the analytics one: long enough
     that an incident noticed months late still has a trail, short enough
     that the table is not an indefinite store of people's IP addresses.
+
+    The clock is normalised to UTC before the cutoff is bound. SQLite stores
+    naive wall-clock UTC and its driver ignores tzinfo entirely, so a caller
+    passing an aware datetime in any other zone would have its wall-clock
+    reading compared as though it were UTC — off by the offset, silently,
+    and only on the dialect the tests run on. `count_all_active_sessions`
+    documents the same hazard at length.
     """
-    now = now or _now()
+    now = as_utc(now) or _now()
     cutoff = now - timedelta(days=max(older_than_days, 1))
     deleted = (
         db.query(AuditLog)

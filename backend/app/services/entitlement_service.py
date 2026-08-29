@@ -38,6 +38,7 @@ from app.core.entitlements import (
     is_exhausted,
     remaining,
 )
+from app.core.timeutils import as_utc
 from app.models.subscription import SubscriptionStatus
 from app.models.user import User
 from app.services.analytics_service import count_events
@@ -158,8 +159,14 @@ def month_start(now: datetime | None = None) -> datetime:
     anything. UTC rather than the account's zone because there is no
     account zone, and inventing one would make the reset time depend on a
     field nobody sets.
+
+    A caller's clock is converted rather than trusted, for two reasons that
+    point the same way: a datetime in +09:00 is in a different *calendar
+    month* from UTC for nine hours of every month boundary, and the result
+    is bound into a SQL comparison against timestamps SQLite stores as naive
+    UTC — where the driver would drop the offset instead of applying it.
     """
-    now = now or _now()
+    now = as_utc(now) or _now()
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
