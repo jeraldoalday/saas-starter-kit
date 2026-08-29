@@ -177,6 +177,73 @@ describe("flushEvents", () => {
   });
 });
 
+describe("flushing against a spent allowance", () => {
+  /** One 429, with the Retry-After the API would really send. */
+  function mockRefusal(retryAfter: string | null) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      statusText: "Too Many Requests",
+      headers: { get: (name: string) => (name === "Retry-After" ? retryAfter : null) },
+      json: async () => ({ detail: "The Free plan allows at most 10000 events" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("stops tracking for as long as the API asked", async () => {
+    const fetchMock = mockRefusal("3600");
+    trackEvent("dashboard.viewed");
+
+    expect(await flushEvents()).toBe(0);
+
+    // Nothing more is queued and nothing more is sent: buffering against a
+    // quota the user cannot do anything about is deferred discarding.
+    expect(trackEvent("dashboard.viewed")).toBe(false);
+    expect(pendingEventCount()).toBe(0);
+    await flushEvents();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("comes back once the window the API named has passed", async () => {
+    vi.useFakeTimers();
+    mockRefusal("60");
+    trackEvent("dashboard.viewed");
+    await flushEvents();
+    expect(trackEvent("dashboard.viewed")).toBe(false);
+
+    vi.advanceTimersByTime(61_000);
+
+    expect(trackEvent("dashboard.viewed")).toBe(true);
+  });
+
+  it("falls back to a minute when the refusal carries no guidance", async () => {
+    vi.useFakeTimers();
+    // A 429 with no header is almost certainly the per-minute rate limiter.
+    mockRefusal(null);
+    trackEvent("dashboard.viewed");
+    await flushEvents();
+
+    vi.advanceTimersByTime(30_000);
+    expect(trackEvent("dashboard.viewed")).toBe(false);
+    vi.advanceTimersByTime(31_000);
+    expect(trackEvent("dashboard.viewed")).toBe(true);
+  });
+
+  it("warns when only part of a batch was stored", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockFetch({ recorded: 2, dropped: 3, remaining: 0 });
+    trackEvent("dashboard.viewed");
+
+    expect(await flushEvents()).toBe(2);
+
+    // A 202 that stored two of five otherwise looks exactly like a 202 that
+    // stored all five.
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("3 event(s) dropped"));
+    warn.mockRestore();
+  });
+});
+
 describe("resetAnalytics", () => {
   it("discards buffered events without sending them", async () => {
     const fetchMock = mockFetch({ recorded: 1 });
