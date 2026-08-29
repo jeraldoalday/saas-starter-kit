@@ -16,6 +16,7 @@ isn't paying for dead weight.
 | Frontend  | Node.js 20+, React 19 + Vite, React Router, TypeScript, Tailwind |
 | Auth      | JWT access tokens, revocable refresh sessions, bcrypt hashing, API keys |
 | Audit     | Append-only security trail, owner-readable and admin-searchable |
+| Plans     | Code-defined entitlements per plan, enforced as quotas at the write paths |
 | Billing   | Stripe webhook + subscription model (stubbed, wired up)  |
 | Infra     | Docker Compose (Postgres + backend + nginx-served frontend) |
 | CI        | GitHub Actions (lint + test, backend and frontend)        |
@@ -26,11 +27,11 @@ isn't paying for dead weight.
 .
 ├── backend/            FastAPI service
 │   ├── app/
-│   │   ├── api/v1/      versioned routes (health, auth, users, api keys, sessions, audit, billing)
-│   │   ├── core/        settings + security (hashing, JWT)
+│   │   ├── api/v1/      versioned routes (health, auth, users, api keys, sessions, audit, billing, plan)
+│   │   ├── core/        settings + security (hashing, JWT) + the plan catalog
 │   │   ├── models/      SQLAlchemy models
 │   │   ├── schemas/     Pydantic request/response schemas
-│   │   ├── services/    business logic (auth, billing, analytics, audit, alerts)
+│   │   ├── services/    business logic (auth, billing, entitlements, analytics, audit, alerts)
 │   │   └── scripts/     operational CLIs (Stripe sync, retention pruning)
 │   ├── migrations/      Alembic migrations
 │   └── tests/           pytest suite
@@ -173,11 +174,73 @@ when it is deleted.
 The table is append-only, so schedule the prune:
 
 ```bash
-make prune                     # all three retention jobs
+make prune                     # every retention job
 make prune-usage-events        # honours ANALYTICS_RETENTION_DAYS
 make prune-api-keys            # honours API_KEY_RETENTION_DAYS
 make prune-sessions            # honours SESSION_RETENTION_DAYS
+make prune-audit-logs          # honours AUDIT_RETENTION_DAYS
 ```
+
+### Plans and quotas
+
+What a plan *costs* lives in `backend/app/core/billing_plans.py` and syncs
+to Stripe. What it *buys* lives next to it in
+`backend/app/core/entitlements.py` and never leaves this repository — a
+ceiling on API keys is not a concept Stripe has, and putting it in product
+metadata would mean answering "how many keys may this account hold?" with a
+network call to a third party during an otherwise entirely local request.
+
+|                      | Free   | Pro       |
+|----------------------|--------|-----------|
+| Active API keys      | 2      | 20        |
+| Signed-in devices    | 3      | 10        |
+| Events per month     | 10,000 | 1,000,000 |
+| Security history     | 30 days| 180 days  |
+
+The plan is **derived from the subscription's status**, never stored on the
+user. `active` and `trialing` grant the paid plan; everything else —
+including `past_due` — falls back to Free, so an indefinite dunning cycle
+does not keep serving paid ceilings. A cancellation takes effect when the
+webhook lands, not when someone remembers to run an update.
+
+```bash
+# What am I on, and how much of it is left?
+curl https://api.example.com/api/v1/plan -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# Everything on offer, cheapest first, with the caller's plan marked.
+curl https://api.example.com/api/v1/plan/catalog -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+Each ceiling is enforced where it is spent, and each refusal says something
+different because the situations differ:
+
+- **API keys** — a request over the ceiling is a `409` naming the plan and
+  the number, so the reader knows whether to revoke or to upgrade. Revoked
+  keys stop counting while staying listed, which makes the limit something
+  an account can manage rather than a one-way door.
+- **Signed-in devices** — reaching the cap retires the oldest session
+  rather than refusing the login. A downgrade must not be able to lock
+  somebody out of an account they hold the password to.
+- **Events per month** — a batch that overshoots is *clipped*, not refused:
+  the ingest response reports `recorded`, `dropped` and `remaining`, and the
+  SPA stops flushing until the allowance resets. Only a batch with no room
+  at all gets a `429`, with a `Retry-After` pointing at the first of the
+  next month.
+- **Security history** — bounds reading, not recording. Rows are kept for
+  `AUDIT_RETENTION_DAYS` regardless of who is paying, so upgrading reveals
+  history that already exists rather than starting a clock.
+
+The dashboard renders all of this from `GET /plan`, with a meter per quota
+that warns before a ceiling is reached rather than only after. Every limit
+is nullable on the wire, and `null` means *no ceiling* rather than unknown —
+so a plan added later can be unlimited without the interface needing to
+recognise a sentinel number.
+
+Two service constants — `MAX_ACTIVE_KEYS_PER_USER` and
+`MAX_ACTIVE_SESSIONS_PER_USER` — remain as backstops that a plan is clamped
+to. A plan is a promise about the product; those are what the deployment can
+carry, and `tests/test_entitlements.py` fails if a plan ever promises more
+than one of them will give.
 
 ### Sign-in sessions
 
