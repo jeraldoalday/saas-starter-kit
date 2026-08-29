@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     auth,
     billing,
     health,
+    plan,
     sessions,
     users,
 )
@@ -20,5 +21,6 @@ api_router.include_router(api_keys.router)
 api_router.include_router(sessions.router)
 api_router.include_router(audit.router)
 api_router.include_router(billing.router)
+api_router.include_router(plan.router)
 api_router.include_router(admin.router)
 api_router.include_router(analytics.router)
