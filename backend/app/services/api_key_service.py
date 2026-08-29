@@ -35,8 +35,14 @@ KEY_PREFIX = "sk_live_"
 # below can be a plain hash rather than a KDF.
 SECRET_BYTES = 32
 
-# A ceiling per account, so a runaway script can't turn key creation into an
-# unbounded write. Well above what a real integration needs.
+# The hard ceiling per account, so a runaway script can't turn key creation
+# into an unbounded write. This is a backstop, not the product's answer: the
+# plan an account is on carries its own, lower limit (see
+# app.core.entitlements), and `create_api_key` enforces whichever binds
+# first. Kept here rather than deleted in favour of the plan limit because a
+# caller that passes no limit — a script, a future admin path — must still
+# hit a bound, and because a plan that promises more than the deployment can
+# carry should be capped rather than believed.
 MAX_ACTIVE_KEYS_PER_USER = 20
 
 # Longest lifetime a caller may request. A key that outlives the person who
@@ -51,7 +57,13 @@ LAST_USED_RESOLUTION = timedelta(minutes=5)
 
 
 class ApiKeyLimitExceededError(Exception):
-    """The account already holds MAX_ACTIVE_KEYS_PER_USER usable keys."""
+    """The account already holds as many usable keys as it is allowed.
+
+    "Allowed" is the lower of the plan's ceiling and
+    MAX_ACTIVE_KEYS_PER_USER. The endpoint checks the plan quota first so
+    the refusal it returns can name the plan; this exception is what stops
+    a caller that skipped that check.
+    """
 
 
 class ApiKeyNotFoundError(Exception):
@@ -104,12 +116,26 @@ def list_api_keys(db: Session, user: User) -> list[ApiKey]:
     return _keys_for(db, user)
 
 
+def effective_key_limit(max_active_keys: int | None) -> int:
+    """The ceiling that actually binds, given a plan's asking price.
+
+    None means the caller has no plan limit to impose, so the backstop
+    stands alone. Anything higher than the backstop is clamped down to it
+    rather than honoured: a plan is a promise about the product, not a
+    licence to write rows the deployment cannot carry.
+    """
+    if max_active_keys is None:
+        return MAX_ACTIVE_KEYS_PER_USER
+    return max(min(max_active_keys, MAX_ACTIVE_KEYS_PER_USER), 0)
+
+
 def create_api_key(
     db: Session,
     user: User,
     *,
     name: str,
     expires_in_days: int | None = None,
+    max_active_keys: int | None = None,
     now: datetime | None = None,
 ) -> tuple[ApiKey, str]:
     """Mint a key for `user`, returning the row and the raw secret.
@@ -117,13 +143,17 @@ def create_api_key(
     The raw secret is returned rather than stored, and this is the only
     moment it exists — the caller must hand it to the user in the same
     response or it is gone.
+
+    `max_active_keys` is the plan's ceiling, which the endpoint resolves and
+    passes down. Enforcing it here rather than only at the endpoint keeps
+    the check next to the write: a second call site added later inherits the
+    limit instead of quietly minting past it.
     """
     now = now or datetime.now(UTC)
 
-    if active_key_count(db, user, now=now) >= MAX_ACTIVE_KEYS_PER_USER:
-        raise ApiKeyLimitExceededError(
-            f"At most {MAX_ACTIVE_KEYS_PER_USER} active keys per account"
-        )
+    limit = effective_key_limit(max_active_keys)
+    if active_key_count(db, user, now=now) >= limit:
+        raise ApiKeyLimitExceededError(f"At most {limit} active keys per account")
 
     expires_at: datetime | None = None
     if expires_in_days is not None:
@@ -260,6 +290,7 @@ __all__ = [
     "authenticate_api_key",
     "count_keys",
     "create_api_key",
+    "effective_key_limit",
     "generate_key",
     "hash_key",
     "list_api_keys",

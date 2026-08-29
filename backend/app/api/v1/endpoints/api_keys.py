@@ -20,6 +20,11 @@ from app.services.api_key_service import (
     revoke_api_key,
 )
 from app.services.audit_service import record as record_audit
+from app.services.entitlement_service import (
+    QuotaExceededError,
+    check_api_key_quota,
+    entitlements_for,
+)
 
 # Deliberately gated on get_current_user (a session JWT) rather than on the
 # key-or-session dependency the rest of the API uses: a leaked key can read
@@ -54,12 +59,29 @@ def create_key(
     The response body is the only place the secret ever appears — it is not
     stored, so a client that drops it has to create another.
     """
+    entitlements = entitlements_for(current_user)
+    # Checked before the write so the refusal can name the plan and the
+    # ceiling it enforces. create_api_key checks again from the limit passed
+    # below — that second check is the backstop for a call site that skipped
+    # this one, and it is what keeps the bound next to the INSERT.
+    try:
+        check_api_key_quota(db, current_user, entitlements=entitlements)
+    except QuotaExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"{exc.quota}. Revoke a key you no longer use, or upgrade "
+                f"your plan for more."
+            ),
+        ) from exc
+
     try:
         api_key, raw_key = create_api_key(
             db,
             current_user,
             name=data.name,
             expires_in_days=data.expires_in_days,
+            max_active_keys=entitlements.max_active_api_keys,
         )
     except ApiKeyLimitExceededError as exc:
         raise HTTPException(
@@ -70,7 +92,10 @@ def create_key(
         db,
         EventName.API_KEY_CREATED,
         user=current_user,
-        properties={"expires": data.expires_in_days is not None},
+        properties={
+            "expires": data.expires_in_days is not None,
+            "plan": entitlements.plan_key,
+        },
     )
     # The prefix and not the secret, which is the same thing the dashboard
     # shows: enough to say *which* key appeared, useless to whoever reads

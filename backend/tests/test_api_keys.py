@@ -1,9 +1,12 @@
 """HTTP surface of API key management and key-authenticated access."""
 
 from app.api.deps_rate_limit import api_key_create_rate_limit
+from app.core.entitlements import FREE_PLAN, PRO_PLAN
 from app.core.rate_limit import rate_limiter
+from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.usage_event import EventName, UsageEvent
-from app.services.api_key_service import KEY_PREFIX, MAX_ACTIVE_KEYS_PER_USER
+from app.models.user import User
+from app.services.api_key_service import KEY_PREFIX
 
 EMAIL = "keys-api@example.com"
 PASSWORD = "s3cret-password"
@@ -20,6 +23,21 @@ def _session(client, email=EMAIL, password=PASSWORD):
 
 def _create_key(client, headers, name="CI deploy", **body):
     return client.post("/api/v1/api-keys", json={"name": name, **body}, headers=headers)
+
+
+def _subscribe(db_session, email=EMAIL):
+    """Put the account on the paid plan, for tests that need its ceilings.
+
+    The free tier's key allowance is deliberately small, so anything
+    exercising a limit *other* than the plan's — the rate limiter, the hard
+    backstop — has to buy its way past it first.
+    """
+    user = db_session.query(User).filter(User.email == email).one()
+    db_session.add(
+        Subscription(user_id=user.id, status=SubscriptionStatus.ACTIVE.value)
+    )
+    db_session.commit()
+    return user
 
 
 def test_creating_a_key_requires_authentication(client):
@@ -57,9 +75,35 @@ def test_creation_rejects_an_expiry_beyond_the_maximum(client):
     assert _create_key(client, headers, expires_in_days=10_000).status_code == 422
 
 
-def test_creation_stops_at_the_per_account_ceiling(client):
+def test_creation_stops_at_the_free_plan_ceiling(client):
     headers = _session(client)
-    for index in range(MAX_ACTIVE_KEYS_PER_USER):
+    for index in range(FREE_PLAN.max_active_api_keys):
+        assert _create_key(client, headers, name=f"Key {index}").status_code == 201
+
+    response = _create_key(client, headers, name="One too many")
+
+    assert response.status_code == 409
+    # The refusal names the plan and the number, so the reader knows whether
+    # to revoke something or to upgrade.
+    detail = response.json()["detail"]
+    assert FREE_PLAN.display_name in detail
+    assert str(FREE_PLAN.max_active_api_keys) in detail
+
+
+def test_a_paid_plan_raises_the_ceiling(client, db_session):
+    headers = _session(client)
+    _subscribe(db_session)
+
+    for index in range(FREE_PLAN.max_active_api_keys + 1):
+        rate_limiter.reset()
+        assert _create_key(client, headers, name=f"Key {index}").status_code == 201
+
+
+def test_creation_stops_at_the_paid_plan_ceiling(client, db_session):
+    headers = _session(client)
+    _subscribe(db_session)
+
+    for index in range(PRO_PLAN.max_active_api_keys):
         # The per-minute rate limit is lower than the per-account ceiling, so
         # it has to be stepped over to reach the limit under test here. The
         # rate limit gets its own test below.
@@ -72,8 +116,26 @@ def test_creation_stops_at_the_per_account_ceiling(client):
     assert response.status_code == 409
 
 
-def test_creation_is_rate_limited(client):
+def test_revoking_a_key_frees_a_slot_under_the_ceiling(client):
     headers = _session(client)
+    first = _create_key(client, headers, name="First").json()
+    for index in range(FREE_PLAN.max_active_api_keys - 1):
+        _create_key(client, headers, name=f"Key {index}")
+    assert _create_key(client, headers, name="Blocked").status_code == 409
+
+    client.delete(f"/api/v1/api-keys/{first['id']}", headers=headers)
+
+    # Revoked keys stay listed but stop counting against the plan, which is
+    # what makes the ceiling something an account can manage rather than a
+    # one-way door.
+    assert _create_key(client, headers, name="Now allowed").status_code == 201
+
+
+def test_creation_is_rate_limited(client, db_session):
+    headers = _session(client)
+    # On the paid plan, so the ceiling under test is the rate limiter rather
+    # than the free tier's much lower key allowance.
+    _subscribe(db_session)
 
     statuses = [
         _create_key(client, headers, name=f"Key {index}").status_code
