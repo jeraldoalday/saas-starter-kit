@@ -69,6 +69,10 @@ this note once that happens and the box is checked.
 - [x] Security audit trail: every sign-in and refusal, credential and role
       change recorded, readable by the account holder at
       `/dashboard/security` and searchable across accounts by an admin
+- [x] Plan entitlements: code-defined ceilings per plan (API keys, signed-in
+      devices, monthly events, security history), derived from the
+      subscription's status and enforced at the write path that spends each
+      one, with `/plan` and `/plan/catalog` reporting what is left
 
 ## Post-PRD — Maintenance mode
 - [x] Dependency update cadence (Dependabot, weekly + grouped)
