@@ -141,9 +141,10 @@ def create_webhook_endpoint(
     except UnsafeWebhookUrlError as exc:
         # 422 rather than 400: the URL is a field of the request body that
         # failed validation, which is the same shape of failure Pydantic
-        # reports for the fields it checks itself.
+        # reports for the fields it checks itself. Spelled
+        # UNPROCESSABLE_CONTENT because ..._ENTITY is the deprecated alias.
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
     except EndpointLimitExceededError as exc:
         raise HTTPException(

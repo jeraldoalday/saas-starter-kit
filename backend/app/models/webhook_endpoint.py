@@ -152,10 +152,17 @@ class WebhookEndpoint(Base):
     user: Mapped["User"] = relationship(back_populates="webhook_endpoints")
     # Deliveries belong to their endpoint: removing the endpoint removes the
     # queue of things nobody will ever deliver to it.
+    #
+    # No `passive_deletes`, so the ORM issues the child deletes itself
+    # rather than leaving them to the database's ON DELETE CASCADE. That is
+    # the slower of the two, and it is the one that behaves the same
+    # everywhere: SQLite — which the test suite runs on — does not enforce
+    # foreign keys unless each connection asks it to, so relying on the
+    # database's cascade would leave orphaned deliveries in exactly the
+    # environment where the test asserting they are gone runs.
     deliveries: Mapped[list["WebhookDelivery"]] = relationship(
         back_populates="endpoint",
         cascade="all, delete-orphan",
-        passive_deletes=True,
     )
 
     __table_args__ = (
