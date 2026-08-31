@@ -70,9 +70,14 @@ this note once that happens and the box is checked.
       change recorded, readable by the account holder at
       `/dashboard/security` and searchable across accounts by an admin
 - [x] Plan entitlements: code-defined ceilings per plan (API keys, signed-in
-      devices, monthly events, security history), derived from the
-      subscription's status and enforced at the write path that spends each
-      one, with `/plan` and `/plan/catalog` reporting what is left
+      devices, monthly events, webhook endpoints, security history), derived
+      from the subscription's status and enforced at the write path that
+      spends each one, with `/plan` and `/plan/catalog` reporting what is left
+- [x] Outbound webhooks: HMAC-signed deliveries to customer-registered URLs,
+      queued in the request that caused the event and sent by a scheduled
+      worker, with a widening retry schedule, auto-disable for endpoints
+      that stay broken, an owner-readable delivery log at
+      `/dashboard/webhooks`, and destinations checked against SSRF
 
 ## Post-PRD — Maintenance mode
 - [x] Dependency update cadence (Dependabot, weekly + grouped)

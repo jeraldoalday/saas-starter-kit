@@ -17,6 +17,7 @@ isn't paying for dead weight.
 | Auth      | JWT access tokens, revocable refresh sessions, bcrypt hashing, API keys |
 | Audit     | Append-only security trail, owner-readable and admin-searchable |
 | Plans     | Code-defined entitlements per plan, enforced as quotas at the write paths |
+| Webhooks  | Outbound, HMAC-signed, retried with backoff, delivered by a worker |
 | Billing   | Stripe webhook + subscription model (stubbed, wired up)  |
 | Infra     | Docker Compose (Postgres + backend + nginx-served frontend) |
 | CI        | GitHub Actions (lint + test, backend and frontend)        |
@@ -27,12 +28,12 @@ isn't paying for dead weight.
 .
 ├── backend/            FastAPI service
 │   ├── app/
-│   │   ├── api/v1/      versioned routes (health, auth, users, api keys, sessions, audit, billing, plan)
+│   │   ├── api/v1/      versioned routes (health, auth, users, api keys, sessions, webhooks, audit, billing, plan)
 │   │   ├── core/        settings + security (hashing, JWT) + the plan catalog
 │   │   ├── models/      SQLAlchemy models
 │   │   ├── schemas/     Pydantic request/response schemas
-│   │   ├── services/    business logic (auth, billing, entitlements, analytics, audit, alerts)
-│   │   └── scripts/     operational CLIs (Stripe sync, retention pruning)
+│   │   ├── services/    business logic (auth, billing, entitlements, analytics, audit, alerts, webhooks)
+│   │   └── scripts/     operational CLIs (Stripe sync, retention pruning, webhook delivery)
 │   ├── migrations/      Alembic migrations
 │   └── tests/           pytest suite
 ├── frontend/           React SPA (Vite)
@@ -41,7 +42,7 @@ isn't paying for dead weight.
 │   └── src/
 │       ├── main.tsx      mounts React and BrowserRouter
 │       ├── App.tsx       route table
-│       ├── pages/        Landing, Login, Register, Dashboard, API keys, Sessions, Security
+│       ├── pages/        Landing, Login, Register, Dashboard, API keys, Sessions, Webhooks, Security
 │       ├── components/   UI primitives + feature components + ProtectedRoute
 │       ├── lib/          API client, auth/analytics helpers, types
 │       ├── hooks/        client hooks (useAuth)
@@ -357,6 +358,106 @@ curl https://api.example.com/api/v1/users/me -H "Authorization: Bearer sk_live_�
   `API_KEY_RETENTION_DAYS`.
 - An optional `expires_in_days` (up to 365) is what lets a key handed to a
   contractor stop working without anyone remembering to revoke it.
+
+### Outbound webhooks
+
+API keys let a customer's system call ours. Webhooks are the other
+direction: an account registers a URL, subscribes it to some events, and we
+POST to it when they happen.
+
+```bash
+# Register an endpoint (needs a browser session, like API key management).
+curl -X POST https://api.example.com/api/v1/webhooks/endpoints \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/hooks/saas",
+       "description": "Production receiver",
+       "event_types": ["api_key.created", "billing.subscription_canceled"]}'
+
+# What can be subscribed to, and what causes each. No auth required.
+curl https://api.example.com/api/v1/webhooks/event-types
+
+# Queue a test delivery, then read what happened to it.
+curl -X POST https://api.example.com/api/v1/webhooks/endpoints/$ID/ping \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+curl https://api.example.com/api/v1/webhooks/deliveries \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+Each delivery is a POST of a JSON envelope:
+
+```json
+{
+  "id": "9f1c…",
+  "type": "api_key.created",
+  "created_at": "2026-08-31T12:00:00+00:00",
+  "data": { "api_key_id": "…", "prefix": "sk_live_ab12", "name": "CI deploy" }
+}
+```
+
+carrying these headers:
+
+| Header                | What it is                                        |
+|-----------------------|---------------------------------------------------|
+| `X-Webhook-Signature` | `t=<unix>,v1=<hex>` — see below                    |
+| `X-Webhook-Event`     | The event type, same as `type` in the body         |
+| `X-Webhook-Delivery`  | The delivery id — **stable across retries**        |
+| `X-Webhook-Attempt`   | Which attempt this is, from 1                      |
+
+**Verifying the signature.** `v1` is the hex HMAC-SHA256 of
+`"{timestamp}.{raw body}"` under the endpoint's secret. Verify against the
+raw bytes you received — not a re-serialised parse of them — and compare in
+constant time:
+
+```python
+import hashlib, hmac, time
+
+def verify(secret: str, raw_body: bytes, header: str, tolerance: int = 300) -> bool:
+    parts = dict(p.split("=", 1) for p in header.split(",") if "=" in p)
+    timestamp, signature = int(parts.get("t", 0)), parts.get("v1", "")
+    if abs(time.time() - timestamp) > tolerance:
+        return False                      # a valid signature from last week is a replay
+    expected = hmac.new(
+        secret.encode(), f"{timestamp}.".encode() + raw_body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+```
+
+The timestamp is inside the signed string rather than beside it, so rewriting
+it does not rescue a replay. `backend/app/services/webhooks/signing.py` is the
+reference implementation, `verify_signature` included.
+
+**Make your handler idempotent.** "We sent it and the response was lost" is
+indistinguishable from "it never arrived", so a delivery can arrive twice.
+`X-Webhook-Delivery` is stable across retries — key on it.
+
+Other things worth knowing:
+
+- **Delivery is out of process.** The API queues rows; a worker sends them.
+  Schedule `make deliver-webhooks` (or run `make deliver-webhooks-loop`), or
+  nothing is ever POSTed. Watch `pending_webhook_deliveries` on
+  `/api/v1/admin/overview` — a queue that keeps climbing means the worker
+  is not running.
+- **Retries widen.** Six attempts over about nine hours: one minute, then
+  five, thirty, two hours, six. Any 2xx is a success; redirects are not
+  followed, since a receiver answering 302 would point the delivery
+  somewhere that was never validated as a destination.
+- **Endpoints are switched off after 20 consecutive failures**, with the
+  reason stored and shown to the owner. Re-enabling clears it and resets
+  the counter — so a fixed receiver is not disabled again by the failures
+  it accrued while broken.
+- **Destinations are checked.** https only, a host that resolves to a public
+  address, and a port from a short list. This is the SSRF control: without
+  it a customer could have the server POST to its own metadata service.
+  `WEBHOOK_ALLOW_INSECURE_URLS=true` relaxes it for local development only.
+- **The signing secret is stored readable**, unlike an API key digest — it
+  has to be, since every delivery is signed with it. It is kept out of the
+  endpoint listing and served from `GET /webhooks/endpoints/{id}/secret`,
+  which is rate limited and recorded in the account's security trail.
+  Rotation is immediate and has no overlap window: update your receiver.
+- **Finished deliveries are pruned** past `WEBHOOK_DELIVERY_RETENTION_DAYS`
+  by `make prune-webhook-deliveries`. Pending rows are never pruned — they
+  are still owed to somebody.
 
 ### Operational alerting
 

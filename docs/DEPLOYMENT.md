@@ -151,16 +151,22 @@ fly machine run --app saas-backend \
   --command "python -m app.scripts.prune_usage_events"
 ```
 
-Revoked API keys, dead sign-in sessions and the security audit trail need
-the same treatment, and all four can share one machine:
+Revoked API keys, dead sign-in sessions, the security audit trail and
+finished webhook deliveries need the same treatment, and all five can share
+one machine:
 
 ```bash
 fly machine run --app saas-backend \
   --schedule daily \
-  --command "sh -c 'python -m app.scripts.prune_usage_events && python -m app.scripts.prune_api_keys && python -m app.scripts.prune_sessions && python -m app.scripts.prune_audit_logs'"
+  --command "sh -c 'python -m app.scripts.prune_usage_events && python -m app.scripts.prune_api_keys && python -m app.scripts.prune_sessions && python -m app.scripts.prune_audit_logs && python -m app.scripts.prune_webhook_deliveries'"
 ```
 
-`make prune` runs the same four locally.
+`make prune` runs the same five locally.
+
+`prune_webhook_deliveries` touches delivered and abandoned rows only. A
+pending delivery past the window is still owed to somebody, and a pile of
+them means the delivery worker below is not running — which the prune has
+to surface rather than tidy away.
 
 `prune_sessions` also clears spent email-verification and password-reset
 tokens, which accumulate one per signup and one per reset request.
@@ -174,7 +180,43 @@ the window should hold means this job has stopped running.
 Check what any of them would remove first with `--dry-run`, e.g.
 `fly ssh console --app saas-backend -C "python -m app.scripts.prune_sessions --dry-run"`.
 
-## 6. On-call alert routing
+## 6. Webhook delivery worker
+
+Outbound webhooks are queued by the API and sent by a separate process.
+Without this scheduled, endpoints can be registered and events queued and
+**nothing is ever delivered** — a failure with no error anywhere, because
+every request that queued a delivery succeeded.
+
+```bash
+fly machine run --app saas-backend \
+  --schedule hourly \
+  --command "python -m app.scripts.deliver_webhooks"
+```
+
+Hourly is the coarsest schedule worth running. For delivery latency measured
+in seconds, run it as a long-lived worker instead — one machine, not a
+scaled group:
+
+```bash
+fly machine run --app saas-backend \
+  --command "python -m app.scripts.deliver_webhooks --loop --interval 10"
+```
+
+**Run exactly one.** The queue has no locking, so two workers claim the same
+due rows and both POST them. Receivers are told to key on the stable
+`X-Webhook-Delivery` header for exactly this reason, but a duplicate that
+depends on every customer having done that correctly is not a duplicate
+worth creating.
+
+Watch `pending_webhook_deliveries` on `/api/v1/admin/overview`. On a healthy
+deployment it hovers near zero between passes; a figure that only climbs
+means the worker is not running, has crashed, or cannot reach anything.
+
+Set `WEBHOOK_ALLOW_INSECURE_URLS=false` in production — the default. It is a
+local-development hatch that permits `http://` and destinations resolving to
+private addresses, which is the SSRF surface the URL check exists to close.
+
+## 7. On-call alert routing
 
 Decide where alerts go before the first incident, not during it. The
 webhook transport is vendor-agnostic — a plain JSON POST, which is what a

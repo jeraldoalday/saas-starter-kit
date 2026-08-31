@@ -25,6 +25,38 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Outbound webhooks.** An account can register URLs to be POSTed to when
+  something happens: `GET/POST /api/v1/webhooks/endpoints`, `PATCH`/`DELETE`
+  on one of them, `POST .../ping` to queue a test delivery,
+  `GET /api/v1/webhooks/deliveries` for the attempt log, and
+  `GET /api/v1/webhooks/event-types` (unauthenticated) for what can be
+  subscribed to. Managed from `/dashboard/webhooks`. Five events ship:
+  `api_key.created`, `api_key.revoked`, and the three subscription
+  transitions. Every request carries an HMAC-SHA256 signature in
+  `X-Webhook-Signature` over `"{timestamp}.{body}"`, with the timestamp
+  inside the signed string so rewriting it cannot rescue a replay. Failed
+  deliveries retry six times over about nine hours; an endpoint failing 20
+  deliveries in a row is switched off with the reason recorded. Endpoint
+  management requires a session JWT, so a leaked API key cannot redirect an
+  account's events or read the secret that would let it forge them.
+- **A webhook endpoint ceiling per plan.** One on Free, five on Pro,
+  reported as a `webhook_endpoints` quota by `GET /api/v1/plan` alongside
+  the existing three. An endpoint the owner has switched off does not hold
+  a slot.
+- **Webhook destinations are validated against SSRF.** A registered URL must
+  be https, resolve entirely to public addresses, and use one of a short
+  list of ports — so a customer cannot have the server POST to the cloud
+  metadata service, the database, or the API itself.
+  `WEBHOOK_ALLOW_INSECURE_URLS=true` relaxes it for local development.
+- **`make deliver-webhooks`** sends what is queued, one bounded pass per
+  invocation, and `make deliver-webhooks-loop` runs it as a worker.
+  **`make prune-webhook-deliveries`** removes finished deliveries past
+  `WEBHOOK_DELIVERY_RETENTION_DAYS`; pending ones are never pruned.
+- **`webhook_endpoints` and `pending_webhook_deliveries` on
+  `/api/v1/admin/overview`.** The second is the operational one: a pending
+  figure that only climbs means the delivery worker is not running, which is
+  otherwise a completely silent failure.
+
 - **API keys.** Long-lived credentials for calling the API without a browser
   session: `POST/GET /api/v1/api-keys` and `DELETE /api/v1/api-keys/{id}`,
   managed from `/dashboard/api-keys`. Keys authenticate through `X-API-Key`
@@ -226,6 +258,25 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Upgrade notes
 
+- **Schedule the webhook delivery worker, or nothing is delivered.** The API
+  queues deliveries; `python -m app.scripts.deliver_webhooks` sends them.
+  Without it, endpoints register successfully, events queue successfully,
+  and no customer's handler ever fires — every request involved returns
+  2xx, so there is no error anywhere to notice. Run exactly one worker: the
+  queue has no locking, so two would send everything twice. See
+  `docs/DEPLOYMENT.md#6-webhook-delivery-worker`.
+- **Add the webhook prune to the retention job.**
+  `python -m app.scripts.prune_webhook_deliveries`, alongside the other
+  four. `webhook_deliveries` grows with traffic rather than with the number
+  of accounts, so it is the fastest-growing table this ships.
+- **New optional settings, all with working defaults:** `WEBHOOKS_ENABLED`,
+  `WEBHOOK_DELIVERY_TIMEOUT_SECONDS`, `WEBHOOK_DELIVERY_BATCH_SIZE`,
+  `WEBHOOK_DELIVERY_RETENTION_DAYS`, `WEBHOOK_ALLOW_INSECURE_URLS`. Leave
+  the last one `false` in production — `true` re-opens the SSRF surface the
+  destination check exists to close.
+- **Free accounts get one webhook endpoint.** Nothing existing is affected,
+  since nothing could register one before this release.
+
 - **Free accounts are now capped where they were not before.** An existing
   account with no live subscription is on the Free plan, so it may hold 2
   API keys rather than 20 and keep 3 devices signed in rather than 10. Keys
@@ -242,7 +293,8 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Run `alembic upgrade head`. Migration `0005` creates `usage_events`;
   migration `0006` folds existing user emails to lowercase; migration `0007`
   creates `api_keys`; migration `0008` creates `auth_sessions`; migration
-  `0009` creates `audit_logs`.
+  `0009` creates `audit_logs`; migration `0010` creates `webhook_endpoints`
+  and `webhook_deliveries`.
 - **Install the audit prune alongside the others.** `audit_logs` is
   append-only, so add `python -m app.scripts.prune_audit_logs` to the
   scheduled retention job (see `docs/DEPLOYMENT.md`). Its window is
