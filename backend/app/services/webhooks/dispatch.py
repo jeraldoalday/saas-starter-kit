@@ -192,10 +192,10 @@ def build_payload(
 
 
 def _endpoints_wanting(
-    db: Session, user: User, event_type: str
+    db: Session, user_id: uuid.UUID, event_type: str
 ) -> list[WebhookEndpoint]:
     stmt = select(WebhookEndpoint).where(
-        WebhookEndpoint.user_id == user.id,
+        WebhookEndpoint.user_id == user_id,
         WebhookEndpoint.is_active.is_(True),
         WebhookEndpoint.disabled_at.is_(None),
     )
@@ -239,13 +239,19 @@ def queue_delivery(
 
 def dispatch_event(
     db: Session,
-    user: User,
     event_type: str | WebhookEventType,
     data: dict[str, Any] | None = None,
     *,
+    user: User | None = None,
+    user_id: uuid.UUID | None = None,
     now: datetime | None = None,
 ) -> list[WebhookDelivery]:
-    """Queue one event for every endpoint of `user` that wants it.
+    """Queue one event for every endpoint of the account that wants it.
+
+    Pass `user` when the caller already holds the row and `user_id` when it
+    only has the id — the same pair `analytics_service.record_event` takes,
+    and for the same caller: the Stripe webhook handler works from a
+    subscription and should not load a user purely to name one.
 
     Returns the deliveries created, which is an empty list in every ordinary
     case: most accounts register no endpoints at all, and this is called
@@ -259,8 +265,12 @@ def dispatch_event(
     if not get_settings().webhooks_enabled:
         return []
 
+    owner_id = user.id if user is not None else user_id
+    if owner_id is None:
+        return []
+
     try:
-        endpoints = _endpoints_wanting(db, user, str(event_type))
+        endpoints = _endpoints_wanting(db, owner_id, str(event_type))
         if not endpoints:
             return []
 

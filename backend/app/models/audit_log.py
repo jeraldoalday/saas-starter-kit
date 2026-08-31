@@ -52,6 +52,17 @@ class AuditAction(StrEnum):
     SESSION_REVOKED = "session.revoked"
     SESSIONS_REVOKED_ALL = "session.revoked_all"
 
+    # Outbound webhooks. The endpoint changes are here because registering
+    # a URL to be notified at is a change to where the account's data goes;
+    # the secret ones are here because that secret is what lets a receiver
+    # tell our requests from a forgery, so revealing or replacing it is a
+    # credential event even though it grants nothing on this system.
+    WEBHOOK_ENDPOINT_CREATED = "webhook.endpoint_created"
+    WEBHOOK_ENDPOINT_UPDATED = "webhook.endpoint_updated"
+    WEBHOOK_ENDPOINT_DELETED = "webhook.endpoint_deleted"
+    WEBHOOK_SECRET_ROTATED = "webhook.secret_rotated"
+    WEBHOOK_SECRET_REVEALED = "webhook.secret_revealed"
+
 
 class AuditOutcome(StrEnum):
     """Whether the attempt succeeded.

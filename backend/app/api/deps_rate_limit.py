@@ -48,3 +48,15 @@ analytics_ingest_rate_limit = RateLimit(limit=60, window_seconds=60)
 # Key creation is a session-authenticated write that mints a credential;
 # a human needs a handful, a script stuck in a retry loop needs stopping.
 api_key_create_rate_limit = RateLimit(limit=10, window_seconds=60)
+# Registering an endpoint resolves a hostname and writes a row; the limit is
+# about the resolution, which is a network call an anonymous-ish loop should
+# not get to make on our behalf sixty times a minute.
+webhook_endpoint_create_rate_limit = RateLimit(limit=10, window_seconds=60)
+# The test ping queues a delivery to a URL the caller chose. Tighter than
+# the rest: it is the one route where a caller decides both that a request
+# leaves our network and roughly when.
+webhook_ping_rate_limit = RateLimit(limit=6, window_seconds=60)
+# Revealing a signing secret. Rate limited not because the secret is
+# guessable but because a stream of reveals is what credential exfiltration
+# looks like, and the audit row it writes should not be one of thousands.
+webhook_secret_rate_limit = RateLimit(limit=10, window_seconds=300)

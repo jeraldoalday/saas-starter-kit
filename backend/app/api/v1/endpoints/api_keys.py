@@ -10,6 +10,7 @@ from app.deps import get_current_user
 from app.models.audit_log import AuditAction
 from app.models.usage_event import EventName
 from app.models.user import User
+from app.models.webhook_endpoint import WebhookEventType
 from app.schemas.api_key import ApiKeyCreate, ApiKeyCreated, ApiKeyRead
 from app.services.analytics_service import record_event
 from app.services.api_key_service import (
@@ -25,6 +26,7 @@ from app.services.entitlement_service import (
     check_api_key_quota,
     entitlements_for,
 )
+from app.services.webhooks.dispatch import dispatch_event
 
 # Deliberately gated on get_current_user (a session JWT) rather than on the
 # key-or-session dependency the rest of the API uses: a leaked key can read
@@ -112,6 +114,20 @@ def create_key(
         },
         **request_origin(request),
     )
+    # The prefix again, and for the same reason: a customer's own system
+    # can reconcile "a key appeared" against its inventory without the
+    # secret ever leaving this response body.
+    dispatch_event(
+        db,
+        WebhookEventType.API_KEY_CREATED,
+        {
+            "api_key_id": str(api_key.id),
+            "prefix": api_key.prefix,
+            "name": api_key.name,
+            "expires_at": api_key.expires_at.isoformat() if api_key.expires_at else None,
+        },
+        user=current_user,
+    )
     return ApiKeyCreated(**ApiKeyRead.model_validate(api_key).model_dump(), key=raw_key)
 
 
@@ -139,4 +155,10 @@ def revoke_key(
         user=current_user,
         context={"key_id": str(key_id)},
         **request_origin(request),
+    )
+    dispatch_event(
+        db,
+        WebhookEventType.API_KEY_REVOKED,
+        {"api_key_id": str(key_id)},
+        user=current_user,
     )

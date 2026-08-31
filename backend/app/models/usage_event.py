@@ -37,6 +37,8 @@ class EventName(StrEnum):
     API_KEY_REVOKED = "api_key.revoked"
     SESSION_REVOKED = "session.revoked"
     SESSIONS_REVOKED_ALL = "session.revoked_all"
+    WEBHOOK_ENDPOINT_CREATED = "webhook_endpoint.created"
+    WEBHOOK_ENDPOINT_DELETED = "webhook_endpoint.deleted"
 
 
 class EventSource(StrEnum):

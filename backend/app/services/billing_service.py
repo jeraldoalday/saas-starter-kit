@@ -10,9 +10,11 @@ from app.core.config import get_settings
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.usage_event import EventName
 from app.models.user import User
+from app.models.webhook_endpoint import WebhookEventType
 from app.models.webhook_event import ProcessedWebhookEvent
 from app.services.alerts import Severity, notify
 from app.services.analytics_service import record_event
+from app.services.webhooks.dispatch import dispatch_event
 
 logger = logging.getLogger("app.billing")
 settings = get_settings()
@@ -199,6 +201,12 @@ def _apply_checkout_completed(db: Session, session_obj: dict) -> None:
         user_id=subscription.user_id,
         properties={"source": "checkout"},
     )
+    dispatch_event(
+        db,
+        WebhookEventType.SUBSCRIPTION_ACTIVATED,
+        {"status": subscription.status, "source": "checkout"},
+        user_id=subscription.user_id,
+    )
 
 
 def _apply_subscription_update(
@@ -313,6 +321,17 @@ _STATUS_EVENTS = {
     SubscriptionStatus.PAST_DUE.value: EventName.SUBSCRIPTION_PAST_DUE,
 }
 
+# The same three transitions, in the names a customer's receiver subscribes
+# to. A second mapping rather than a derived one: the analytics name and the
+# webhook name are two published contracts that happen to agree today, and
+# collapsing them would mean renaming an internal event silently renamed a
+# customer's event type.
+_STATUS_WEBHOOK_EVENTS = {
+    SubscriptionStatus.ACTIVE.value: WebhookEventType.SUBSCRIPTION_ACTIVATED,
+    SubscriptionStatus.CANCELED.value: WebhookEventType.SUBSCRIPTION_CANCELED,
+    SubscriptionStatus.PAST_DUE.value: WebhookEventType.SUBSCRIPTION_PAST_DUE,
+}
+
 
 def _record_status_change(
     db: Session, subscription: Subscription, previous_status: str
@@ -337,3 +356,15 @@ def _record_status_change(
         user_id=subscription.user_id,
         properties={"from": previous_status, "to": subscription.status},
     )
+
+    # Announced on the same transition the funnel records, so a customer's
+    # system learns about a downgrade at the moment the ceilings actually
+    # change rather than on their next poll.
+    webhook_event = _STATUS_WEBHOOK_EVENTS.get(subscription.status)
+    if webhook_event is not None:
+        dispatch_event(
+            db,
+            webhook_event,
+            {"status": subscription.status, "previous_status": previous_status},
+            user_id=subscription.user_id,
+        )
