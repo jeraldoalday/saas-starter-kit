@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.models.api_key import ApiKey
     from app.models.auth_session import AuthSession
     from app.models.subscription import Subscription
+    from app.models.webhook_endpoint import WebhookEndpoint
 
 
 class User(Base):
@@ -42,5 +43,11 @@ class User(Base):
     # Same reasoning as api_keys: a deleted account must not leave behind
     # rows that would still authenticate a refresh.
     sessions: Mapped[list["AuthSession"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    # Same again, with one extra consequence: an endpoint outliving its
+    # account would keep a queue of deliveries pointed at a URL nobody is
+    # left to answer for, signed with a secret nobody can rotate.
+    webhook_endpoints: Mapped[list["WebhookEndpoint"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
