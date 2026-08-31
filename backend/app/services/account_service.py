@@ -18,6 +18,7 @@ from app.models.subscription import Subscription
 from app.models.token import OneTimeToken
 from app.models.usage_event import UsageEvent
 from app.models.user import User
+from app.models.webhook_endpoint import WebhookEndpoint
 
 logger = logging.getLogger("app.account")
 
@@ -53,6 +54,12 @@ def export_user_data(db: Session, user: User) -> dict[str, Any]:
         db.query(AuthSession)
         .filter(AuthSession.user_id == user.id)
         .order_by(AuthSession.created_at.desc())
+        .all()
+    )
+    webhook_endpoints = (
+        db.query(WebhookEndpoint)
+        .filter(WebhookEndpoint.user_id == user.id)
+        .order_by(WebhookEndpoint.created_at.desc())
         .all()
     )
     # Only rows where this account is the *subject*. Rows where they were
@@ -134,6 +141,35 @@ def export_user_data(db: Session, user: User) -> dict[str, Any]:
                 "ip_address": session.ip_address,
             }
             for session in sessions
+        ],
+        # The URLs this account asked us to send their data to. Held about
+        # them by any reading, and the one part of the export that says
+        # where their data has been going — which is exactly what a subject
+        # access request is for. The signing secret is excluded: it is a
+        # credential, like the password hash and the key digests, and the
+        # owner can already read it from the endpoint that exists to serve
+        # it. Deliveries themselves are not included; they are copies of
+        # events already in this file, addressed to an endpoint listed here.
+        "webhook_endpoints": [
+            {
+                "url": endpoint.url,
+                "description": endpoint.description,
+                "event_types": list(endpoint.event_types),
+                "is_active": endpoint.is_active,
+                "created_at": (
+                    endpoint.created_at.isoformat() if endpoint.created_at else None
+                ),
+                "disabled_at": (
+                    endpoint.disabled_at.isoformat() if endpoint.disabled_at else None
+                ),
+                "disabled_reason": endpoint.disabled_reason,
+                "last_success_at": (
+                    endpoint.last_success_at.isoformat()
+                    if endpoint.last_success_at
+                    else None
+                ),
+            }
+            for endpoint in webhook_endpoints
         ],
         # The security trail is data held about them too, and it is the
         # part they are most likely to be asking for: every sign-in, from

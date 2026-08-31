@@ -52,6 +52,12 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   invocation, and `make deliver-webhooks-loop` runs it as a worker.
   **`make prune-webhook-deliveries`** removes finished deliveries past
   `WEBHOOK_DELIVERY_RETENTION_DAYS`; pending ones are never pruned.
+- **Data exports include registered webhook endpoints.** Metadata only —
+  URL, description, subscriptions, and whether delivery has given up on it.
+  Where an account's data has been going is exactly what a subject access
+  request is for. The signing secret is excluded, like the password hash
+  and the API key digests; it is readable from the endpoint that exists to
+  serve it, which is audited, and a carried-away file is not.
 - **`webhook_endpoints` and `pending_webhook_deliveries` on
   `/api/v1/admin/overview`.** The second is the operational one: a pending
   figure that only climbs means the delivery worker is not running, which is

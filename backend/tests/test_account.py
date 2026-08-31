@@ -1,11 +1,16 @@
+from datetime import UTC, datetime
+
 from app.models.api_key import ApiKey
 from app.models.auth_session import AuthSession
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.token import OneTimeToken, TokenPurpose
 from app.models.usage_event import UsageEvent
 from app.models.user import User
+from app.models.webhook_delivery import WebhookDelivery
+from app.models.webhook_endpoint import WebhookEndpoint, WebhookEventType
 from app.services.api_key_service import create_api_key
 from app.services.token_service import issue_token
+from app.services.webhooks.dispatch import queue_delivery
 
 EMAIL = "account@example.com"
 PASSWORD = "s3cret-password"
@@ -249,6 +254,76 @@ def test_export_reports_no_sessions_as_an_empty_list(client, db_session):
     db_session.commit()
 
     assert client.get("/api/v1/users/me/export", headers=headers).json()["sessions"] == []
+
+
+def test_export_lists_webhook_endpoints_without_their_secrets(client, db_session):
+    email = "webhooks-export@example.com"
+    headers = _auth(client, email=email)
+    user = db_session.query(User).filter(User.email == email).one()
+    endpoint = WebhookEndpoint(
+        user_id=user.id,
+        url="https://receiver.example.com/hooks",
+        description="Production receiver",
+        secret="whsec_the-signing-secret",
+        event_types=["api_key.created"],
+        created_at=datetime.now(UTC),
+    )
+    db_session.add(endpoint)
+    db_session.commit()
+
+    body = client.get("/api/v1/users/me/export", headers=headers).json()
+
+    # Where this account's data has been going is exactly the kind of thing
+    # a subject access request is for, and these arrived after the export
+    # was first written — the drift the module docstring warns about.
+    exported = body["webhook_endpoints"]
+    assert [entry["url"] for entry in exported] == ["https://receiver.example.com/hooks"]
+    assert exported[0]["event_types"] == ["api_key.created"]
+    # The signing secret is a credential, excluded like the password hash
+    # and the key digests. It is readable from the endpoint that exists to
+    # serve it, which is audited; a carried-away file is not.
+    assert endpoint.secret not in str(body)
+
+
+def test_export_reports_no_webhook_endpoints_as_an_empty_list(client):
+    headers = _auth(client, email="no-hooks@example.com")
+
+    body = client.get("/api/v1/users/me/export", headers=headers).json()
+
+    assert body["webhook_endpoints"] == []
+
+
+def test_deleting_an_account_destroys_its_webhook_endpoints(client, db_session):
+    """Its queue goes too, by cascade from the endpoint.
+
+    An endpoint outliving its account would keep a queue aimed at a URL
+    nobody is left to answer for, signed with a secret nobody can rotate.
+    """
+    email = "hooks-deleted@example.com"
+    headers = _auth(client, email=email)
+    user = db_session.query(User).filter(User.email == email).one()
+    endpoint = WebhookEndpoint(
+        user_id=user.id,
+        url="https://receiver.example.com/hooks",
+        secret="whsec_test-secret",
+        event_types=[],
+        created_at=datetime.now(UTC),
+    )
+    db_session.add(endpoint)
+    db_session.commit()
+    queue_delivery(db_session, endpoint, WebhookEventType.PING, {})
+
+    response = client.request(
+        "DELETE",
+        "/api/v1/users/me",
+        json={"password": PASSWORD},
+        headers=headers,
+    )
+
+    assert response.status_code == 204
+    db_session.expunge_all()
+    assert db_session.query(WebhookEndpoint).count() == 0
+    assert db_session.query(WebhookDelivery).count() == 0
 
 
 def test_export_reports_no_keys_as_an_empty_list(client):
