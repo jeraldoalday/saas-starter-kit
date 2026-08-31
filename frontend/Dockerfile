@@ -17,7 +17,7 @@ COPY . .
 RUN npm run build
 
 # nginx-unprivileged already runs as a non-root user and listens on 8080.
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
