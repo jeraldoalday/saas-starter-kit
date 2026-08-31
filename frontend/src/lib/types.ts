@@ -161,3 +161,64 @@ export interface UsageSummary {
   events_by_name: Record<string, number>;
   daily: DailyCount[];
 }
+
+/**
+ * One URL this account has asked us to notify.
+ *
+ * The signing secret is deliberately absent from this shape: the API keeps
+ * it out of the listing so a dashboard polling a table of endpoints never
+ * moves secrets through a proxy log. It is fetched on demand — see
+ * `revealWebhookSecret` — and returned once at creation.
+ */
+export interface WebhookEndpoint {
+  id: string;
+  url: string;
+  description: string;
+  /** Subscribed event types. Empty is legal: a ping still arrives. */
+  event_types: string[];
+  /** The owner's own switch. */
+  is_active: boolean;
+  created_at: string;
+  /** Set when delivery gave up on it; distinct from the owner switching it off. */
+  disabled_at: string | null;
+  disabled_reason: string | null;
+  consecutive_failures: number;
+  last_success_at: string | null;
+  last_failure_at: string | null;
+  /** Both switches folded together, so a client never has to know there are two. */
+  is_deliverable: boolean;
+}
+
+/** The creation response: the endpoint, plus its secret. */
+export interface CreatedWebhookEndpoint extends WebhookEndpoint {
+  secret: string;
+}
+
+/** A signing secret on its own, from creation, rotation, or a reveal. */
+export interface WebhookSecret {
+  id: string;
+  secret: string;
+}
+
+/** One attempt history: what was sent where, and how it went. */
+export interface WebhookDelivery {
+  id: string;
+  endpoint_id: string;
+  event_type: string;
+  /** "pending" | "delivered" | "failed". */
+  status: string;
+  attempts: number;
+  next_attempt_at: string | null;
+  /** Null when the request never reached a server at all. */
+  last_status_code: number | null;
+  last_error: string | null;
+  created_at: string;
+  delivered_at: string | null;
+}
+
+/** One subscribable event, with the words to show for it. */
+export interface WebhookEventType {
+  event_type: string;
+  label: string;
+  description: string;
+}

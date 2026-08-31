@@ -20,5 +20,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: "/dashboard", label: "Overview", end: true },
   { to: "/dashboard/api-keys", label: "API keys", end: false },
   { to: "/dashboard/sessions", label: "Sessions", end: false },
+  { to: "/dashboard/webhooks", label: "Webhooks", end: false },
   { to: "/dashboard/security", label: "Security", end: false },
 ];
