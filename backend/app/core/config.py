@@ -100,6 +100,29 @@ class Settings(BaseSettings):
     # answer questions nobody is asking.
     audit_retention_days: int = 180
 
+    # Outbound webhooks. Off switches *queueing* only: an endpoint can
+    # still be registered and the worker still drains whatever is already
+    # queued, so turning this off stops new promises being made rather than
+    # abandoning the ones already made.
+    webhooks_enabled: bool = True
+    # Ceiling on how long one unresponsive receiver can hold the delivery
+    # worker. Longer than the alert transport's because a customer's handler
+    # may do real work before it answers, and short enough that a wedged
+    # receiver cannot stall the batch behind it for a minute.
+    webhook_delivery_timeout_seconds: float = 10.0
+    # How many deliveries one pass of the worker sends. A bounded pass keeps
+    # the runtime predictable: a backlog is worked through over several runs
+    # rather than one run of unknown length that cannot be deployed over.
+    webhook_delivery_batch_size: int = 50
+    # How long delivered and abandoned deliveries are kept. Pending rows are
+    # never pruned regardless — they are still owed to somebody.
+    webhook_delivery_retention_days: int = 30
+    # Permit http:// destinations and hosts that resolve to private
+    # addresses. For pointing an endpoint at a receiver on your own machine
+    # while building one; a production deployment that turns this on has
+    # re-opened the SSRF surface app/services/webhooks/urls.py describes.
+    webhook_allow_insecure_urls: bool = False
+
     # Operational alerting. "log" (or its synonym "console") writes to the
     # structured log at a level a log-based monitor can watch; "webhook"
     # POSTs to an incoming webhook — a plain JSON body, which Slack renders
