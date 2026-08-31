@@ -1,4 +1,4 @@
-.PHONY: dev-backend dev-frontend test test-backend test-frontend lint migrate up down sync-stripe-catalog prune-usage-events prune-api-keys prune-sessions prune-audit-logs prune check-health-and-alert check-migration-drift
+.PHONY: dev-backend dev-frontend test test-backend test-frontend lint migrate up down sync-stripe-catalog prune-usage-events prune-api-keys prune-sessions prune-audit-logs prune-webhook-deliveries prune check-health-and-alert check-migration-drift deliver-webhooks deliver-webhooks-loop
 
 dev-backend:
 	cd backend && uvicorn app.main:app --reload
@@ -36,8 +36,24 @@ prune-sessions:
 prune-audit-logs:
 	cd backend && python -m app.scripts.prune_audit_logs
 
+prune-webhook-deliveries:
+	cd backend && python -m app.scripts.prune_webhook_deliveries
+
 # Everything the scheduled retention job should run.
-prune: prune-usage-events prune-api-keys prune-sessions prune-audit-logs
+prune: prune-usage-events prune-api-keys prune-sessions prune-audit-logs prune-webhook-deliveries
+
+# One pass over the outbound webhook queue: what a cron entry or a
+# Kubernetes CronJob should call. Nothing queued by the API is POSTed until
+# this runs, so a deployment with webhooks enabled and no schedule for this
+# has a queue and no delivery.
+deliver-webhooks:
+	cd backend && python -m app.scripts.deliver_webhooks
+
+# The same thing as a long-lived worker, for when a per-minute cron leaves
+# deliveries waiting most of a minute. Run one at a time: the queue has no
+# locking, so two workers would send everything twice.
+deliver-webhooks-loop:
+	cd backend && python -m app.scripts.deliver_webhooks --loop
 
 check-health-and-alert:
 	cd backend && python -m app.scripts.check_health_and_alert
