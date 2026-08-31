@@ -96,6 +96,37 @@ def test_counts_api_keys(client, admin):
     assert _overview(client, admin)["total_api_keys"] == 1
 
 
+def test_counts_webhook_endpoints_and_the_queue_behind_them(
+    client, db_session, admin
+):
+    """The pending figure is the operational one.
+
+    Nothing is POSTed until the delivery worker runs, so a queue that keeps
+    growing is the symptom of a worker that is not scheduled or has
+    crashed — a failure that is otherwise completely silent.
+    """
+    from app.models.webhook_endpoint import WebhookEndpoint, WebhookEventType
+    from app.services.webhooks.dispatch import queue_delivery
+
+    user = db_session.query(User).filter(User.email == "overview-admin@example.com").one()
+    endpoint = WebhookEndpoint(
+        user_id=user.id,
+        url="https://receiver.example.com/hooks",
+        secret="whsec_test-secret",
+        event_types=[],
+        created_at=datetime.now(UTC),
+    )
+    db_session.add(endpoint)
+    db_session.commit()
+
+    assert _overview(client, admin)["webhook_endpoints"] == 1
+    assert _overview(client, admin)["pending_webhook_deliveries"] == 0
+
+    queue_delivery(db_session, endpoint, WebhookEventType.PING, {})
+
+    assert _overview(client, admin)["pending_webhook_deliveries"] == 1
+
+
 def test_groups_subscriptions_by_status(client, db_session, admin):
     user = db_session.query(User).filter(User.email == "overview-admin@example.com").one()
     db_session.add(

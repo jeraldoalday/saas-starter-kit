@@ -51,6 +51,15 @@ class AdminOverview(BaseModel):
     # a number that only ever goes up and so answers nothing: what an
     # operator wants to know is whether somebody is trying accounts *now*.
     failed_logins_last_hour: int
+    # Outbound webhooks. The endpoint count is a product figure; the
+    # pending count is an operational one, and it is the more useful of the
+    # two: nothing is POSTed until the delivery worker runs, so a queue that
+    # keeps growing is the symptom of a worker that is not scheduled, has
+    # crashed, or cannot reach anything. It is the fastest way to notice a
+    # failure that is otherwise completely silent.
+    webhook_endpoints: int
+    pending_webhook_deliveries: int
+
     # The trail's own size, for the question the retention prune answers. A
     # figure far above what the window should hold means the scheduled prune
     # has not been running.

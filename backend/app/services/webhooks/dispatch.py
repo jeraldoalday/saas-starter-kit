@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -532,11 +532,19 @@ def purge_deliveries(
 
 
 def pending_count(db: Session) -> int:
-    """How many deliveries are queued — for the admin overview and alerts."""
-    stmt = select(WebhookDelivery).where(
-        WebhookDelivery.status == DeliveryStatus.PENDING.value
+    """How many deliveries are queued — for the admin overview.
+
+    A COUNT rather than rows loaded and summed, because the admin overview
+    is the one endpoint whose cost scales with the whole deployment rather
+    than with one account: a queue is exactly the table that is enormous on
+    the day somebody looks at this figure.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(WebhookDelivery)
+        .where(WebhookDelivery.status == DeliveryStatus.PENDING.value)
     )
-    return len(list(db.execute(stmt).scalars().all()))
+    return int(db.execute(stmt).scalar_one())
 
 
 def example_payload(event_type: str | WebhookEventType) -> str:
