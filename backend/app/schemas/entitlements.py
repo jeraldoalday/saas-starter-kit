@@ -20,6 +20,7 @@ class EntitlementsRead(BaseModel):
     max_active_api_keys: int | None
     max_active_sessions: int | None
     monthly_event_allowance: int | None
+    max_webhook_endpoints: int | None
     audit_history_days: int | None
 
 
@@ -32,7 +33,12 @@ class QuotaRead(BaseModel):
     negative in one place and not another.
     """
 
-    key: str = Field(description='Stable identifier: "api_keys", "sessions", "events".')
+    key: str = Field(
+        description=(
+            'Stable identifier: "api_keys", "sessions", "events", '
+            '"webhook_endpoints".'
+        )
+    )
     label: str = Field(description="Human wording for the thing being counted.")
     limit: int | None
     used: int

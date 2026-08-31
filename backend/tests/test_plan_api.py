@@ -15,7 +15,7 @@ from app.models.audit_log import AuditAction, AuditLog
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.usage_event import UsageEvent
 from app.models.user import User
-from app.services.entitlement_service import month_start
+from app.services.entitlement_service import QUOTA_KEYS, month_start
 
 EMAIL = "plan-api@example.com"
 PASSWORD = "s3cret-password"
@@ -93,7 +93,7 @@ def test_the_plan_reports_every_quota_with_what_is_left(client):
     body = client.get("/api/v1/plan", headers=headers).json()
 
     quotas = _quotas(body)
-    assert set(quotas) == {"api_keys", "sessions", "events"}
+    assert set(quotas) == set(QUOTA_KEYS)
     for quota in quotas.values():
         assert quota["remaining"] == quota["limit"] - quota["used"]
         assert quota["exhausted"] is False

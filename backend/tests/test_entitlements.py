@@ -39,6 +39,7 @@ from app.services.api_key_service import (
 )
 from app.services.entitlement_service import (
     PAID_PLAN_KEY,
+    QUOTA_KEYS,
     Quota,
     QuotaExceededError,
     allowance_for_events,
@@ -235,7 +236,10 @@ def test_next_period_start_rolls_over_the_year_and_short_months(now, expected):
 def test_a_fresh_account_has_spent_nothing(db_session, user):
     snapshot = quota_snapshot(db_session, user)
 
-    assert [quota.key for quota in snapshot.quotas] == ["api_keys", "sessions", "events"]
+    # Against QUOTA_KEYS rather than a literal list: a ceiling added to the
+    # catalog should show up in the snapshot without this test needing a
+    # hand, and should fail here if it is declared and never counted.
+    assert [quota.key for quota in snapshot.quotas] == list(QUOTA_KEYS)
     assert all(quota.used == 0 for quota in snapshot.quotas)
     assert snapshot.subscription_status is None
     assert snapshot.period_start == month_start()

@@ -14,7 +14,7 @@ already keeps in step, so a `past_due` account falls back to the free tier
 the moment the webhook lands rather than when a nightly job notices.
 
 **Reporting and enforcement are separate calls.** `quota_snapshot` builds
-the whole picture for the dashboard and costs three counting queries;
+the whole picture for the dashboard and costs four counting queries;
 `check_api_key_quota` costs one and is what a write path calls. A write
 that paid for the full snapshot would be counting sessions and events to
 find out whether it may mint a key.
@@ -44,6 +44,7 @@ from app.models.user import User
 from app.services.analytics_service import count_events
 from app.services.api_key_service import active_key_count
 from app.services.session_service import count_active_sessions
+from app.services.webhooks.endpoints import active_endpoint_count
 
 logger = logging.getLogger("app.entitlements")
 
@@ -62,10 +63,11 @@ ENTITLING_STATUSES = frozenset(
 # one place so that change is one line, not a search.
 PAID_PLAN_KEY = "pro_monthly"
 
-# The three ceilings an account can *consume*. `audit_history_days` is a
-# window rather than a budget — nothing is used up by reading — so it is
-# reported as a plain entitlement instead of as a quota with a meter.
-QUOTA_KEYS = ("api_keys", "sessions", "events")
+# The ceilings an account can *consume*. `audit_history_days` is absent
+# because it is a window rather than a budget — nothing is used up by
+# reading — so it is reported as a plain entitlement instead of as a quota
+# with a meter.
+QUOTA_KEYS = ("api_keys", "sessions", "events", "webhook_endpoints")
 
 
 class QuotaExceededError(Exception):
@@ -274,12 +276,33 @@ def event_quota(
     )
 
 
+def webhook_endpoint_quota(
+    db: Session, user: User, *, entitlements: Entitlements | None = None
+) -> Quota:
+    """How many more webhook endpoints this account may register.
+
+    Counts deliverable endpoints rather than every row, so an endpoint the
+    owner switched off does not hold a slot they are being asked to pay for.
+    An auto-disabled one does not either — the account has already lost the
+    deliveries, and charging them a slot for a receiver that broke is the
+    wrong way round.
+    """
+    entitlements = entitlements or entitlements_for(user)
+    return _quota(
+        entitlements,
+        "webhook_endpoints",
+        "webhook endpoints",
+        entitlements.max_webhook_endpoints,
+        active_endpoint_count(db, user),
+    )
+
+
 def quota_snapshot(
     db: Session, user: User, *, now: datetime | None = None
 ) -> PlanStatus:
     """The whole plan picture for one account.
 
-    Three counting queries, which is why the write paths call the single
+    Four counting queries, which is why the write paths call the single
     quota they care about instead of this.
     """
     now = now or _now()
@@ -293,6 +316,7 @@ def quota_snapshot(
             api_key_quota(db, user, entitlements=entitlements),
             session_quota(db, user, entitlements=entitlements),
             event_quota(db, user, entitlements=entitlements, now=now),
+            webhook_endpoint_quota(db, user, entitlements=entitlements),
         ],
         period_start=month_start(now),
     )
@@ -310,6 +334,27 @@ def check_api_key_quota(
     if quota.exhausted:
         logger.info(
             "api key creation refused by plan quota",
+            extra={"user_id": str(user.id), "plan": quota.plan_display_name},
+        )
+        raise QuotaExceededError(quota)
+    return quota
+
+
+def check_webhook_endpoint_quota(
+    db: Session, user: User, *, entitlements: Entitlements | None = None
+) -> Quota:
+    """Refuse if this account may not register another endpoint.
+
+    The same shape as `check_api_key_quota`, and separate from it rather
+    than generalised into one `check(quota_key)` helper: the two refusals
+    are worded differently at the endpoint, and a single function taking a
+    key would need a mapping from key to counter that is exactly the three
+    lines it saved.
+    """
+    quota = webhook_endpoint_quota(db, user, entitlements=entitlements)
+    if quota.exhausted:
+        logger.info(
+            "webhook endpoint creation refused by plan quota",
             extra={"user_id": str(user.id), "plan": quota.plan_display_name},
         )
         raise QuotaExceededError(quota)
@@ -353,6 +398,7 @@ __all__ = [
     "allowance_for_events",
     "api_key_quota",
     "check_api_key_quota",
+    "check_webhook_endpoint_quota",
     "entitlements_for",
     "event_quota",
     "month_start",
@@ -360,4 +406,5 @@ __all__ = [
     "plan_key_for",
     "quota_snapshot",
     "session_quota",
+    "webhook_endpoint_quota",
 ]

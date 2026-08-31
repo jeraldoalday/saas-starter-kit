@@ -59,6 +59,14 @@ class Entitlements:
     # window a customer can reconcile against an invoice.
     monthly_event_allowance: int | None
 
+    # URLs the account may have us POST to when something happens. Priced
+    # lower than API keys and deliberately so: an endpoint is fan-out we pay
+    # for, not a credential the customer holds. One is enough to wire a
+    # production receiver up, which is what the free tier is for; separating
+    # staging from production, or fanning out to a second team's service, is
+    # a shape that belongs to a deployment with a budget.
+    max_webhook_endpoints: int | None
+
     # How far back the account can read its own security trail. The rows are
     # kept for AUDIT_RETENTION_DAYS regardless — this bounds reading, not
     # recording, so upgrading makes history that already exists visible
@@ -73,6 +81,7 @@ FREE_PLAN = Entitlements(
     display_name="Free",
     max_active_api_keys=2,
     max_active_sessions=3,
+    max_webhook_endpoints=1,
     monthly_event_allowance=10_000,
     audit_history_days=30,
 )
@@ -82,6 +91,7 @@ PRO_PLAN = Entitlements(
     display_name="Pro",
     max_active_api_keys=20,
     max_active_sessions=10,
+    max_webhook_endpoints=5,
     monthly_event_allowance=1_000_000,
     audit_history_days=180,
 )
