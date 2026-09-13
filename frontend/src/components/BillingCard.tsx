@@ -20,14 +20,20 @@ function formatRenewal(subscription: Subscription): string | null {
 export function BillingCard() {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
+  // Distinct from "no subscription": a failed fetch tells us nothing about
+  // billing status, where a successful one returning null is a confirmed
+  // answer. Conflating the two would offer a "Subscribe" button to someone
+  // who is already paying, just because their status failed to load.
+  const [failed, setFailed] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       setSubscription(await fetchSubscription());
+      setFailed(false);
     } catch {
-      setSubscription(null);
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -58,6 +64,12 @@ export function BillingCard() {
 
       {loading ? (
         <p className="text-sm text-neutral-500">Loading…</p>
+      ) : failed ? (
+        <p className="text-sm text-neutral-500">
+          Could not load your subscription status. Reload the page before
+          subscribing or managing billing, so you don't start a second
+          subscription on top of one that is already active.
+        </p>
       ) : (
         <>
           <p className="mb-4 text-sm text-neutral-400">
