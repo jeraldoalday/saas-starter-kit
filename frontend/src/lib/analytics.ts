@@ -188,8 +188,9 @@ export function fetchMyUsage(days = 14): Promise<UsageSummary> {
  * other view listing events formats them the same way.
  */
 export function humanizeEventName(name: string): string {
-  const [namespace, ...rest] = name.split(".");
+  const [rawNamespace, ...rest] = name.split(".");
+  const namespace = rawNamespace.replace(/_/g, " ");
   const action = rest.join(" ").replace(/_/g, " ");
-  if (!action) return namespace.replace(/_/g, " ");
+  if (!action) return namespace;
   return `${namespace.charAt(0).toUpperCase()}${namespace.slice(1)}: ${action}`;
 }

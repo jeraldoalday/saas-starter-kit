@@ -307,6 +307,12 @@ describe("humanizeEventName", () => {
     ["user.registered", "User: registered"],
     ["landing", "landing"],
     ["account.status_changed", "Account: status changed"],
+    // Namespaces themselves can carry an underscore (`api_key`,
+    // `webhook_endpoint`), not just the action — those must be humanized too.
+    ["api_key.created", "Api key: created"],
+    ["api_key.revoked", "Api key: revoked"],
+    ["webhook_endpoint.created", "Webhook endpoint: created"],
+    ["webhook_endpoint.deleted", "Webhook endpoint: deleted"],
   ])("renders %o as %o", (raw, expected) => {
     expect(humanizeEventName(raw)).toBe(expected);
   });
