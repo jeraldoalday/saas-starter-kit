@@ -12,6 +12,7 @@ from app.models.usage_event import EventName
 from app.models.user import User
 from app.models.webhook_endpoint import WebhookEventType
 from app.models.webhook_event import ProcessedWebhookEvent
+from app.services.account_service import has_active_subscription
 from app.services.alerts import Severity, notify
 from app.services.analytics_service import record_event
 from app.services.webhooks.dispatch import dispatch_event
@@ -30,6 +31,19 @@ class NoStripeCustomerError(Exception):
 
     A customer only exists after the user completes checkout at least once, so
     the portal is unreachable until then.
+    """
+
+
+class AlreadySubscribedError(Exception):
+    """Raised when checkout is requested for an account already paying.
+
+    Checkout mode "subscription" does not refuse a second subscription for
+    the same customer — it creates one, and the account is now billed twice.
+    Nothing about the request that reaches here proves it is a mistake; a
+    stale tab, a resubmitted form, or a client retrying a slow response all
+    look identical to Stripe. So this is caught before the API call rather
+    than after, the same way account deletion refuses while a subscription
+    is active instead of leaving Stripe to notice.
     """
 
 
@@ -58,6 +72,9 @@ def create_checkout_session(
     placeholder test keys this will raise a stripe.error.AuthenticationError,
     which is expected until real Stripe credentials are wired in.
     """
+    if has_active_subscription(user):
+        raise AlreadySubscribedError()
+
     subscription = _get_or_create_subscription(db, user)
     base = settings.frontend_base_url.rstrip("/")
 

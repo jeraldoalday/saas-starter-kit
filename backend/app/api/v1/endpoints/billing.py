@@ -12,6 +12,7 @@ from app.schemas.billing import (
 )
 from app.services.analytics_service import record_event
 from app.services.billing_service import (
+    AlreadySubscribedError,
     InvalidWebhookSignatureError,
     NoStripeCustomerError,
     create_checkout_session,
@@ -27,7 +28,17 @@ def checkout(
     current_user: User = Depends(get_verified_user),
     db: Session = Depends(get_db),
 ) -> CheckoutSessionResponse:
-    url = create_checkout_session(db, current_user)
+    try:
+        url = create_checkout_session(db, current_user)
+    except AlreadySubscribedError as exc:
+        # Stripe would open a second subscription for the same customer
+        # rather than refusing, so this has to stop the request before it
+        # gets there — manage the existing one from the portal instead.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have an active subscription — manage it from the billing portal",
+        ) from exc
+
     # Recorded after Stripe accepted the session, so the funnel counts
     # intents that actually reached checkout rather than failed attempts.
     record_event(db, EventName.CHECKOUT_STARTED, user=current_user)

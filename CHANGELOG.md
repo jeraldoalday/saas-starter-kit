@@ -186,6 +186,13 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Checkout refuses an account that is already subscribed.** Stripe's
+  checkout in `mode="subscription"` does not refuse a second subscription
+  for the same customer — it opens one, and the account is billed twice. A
+  stale tab, a resubmitted form, or a client retrying a slow response could
+  all reach `POST /billing/checkout` while already `active` or `trialing`.
+  It now answers `409` and points at the billing portal instead, the same
+  way account deletion already refuses while a subscription is active.
 - **Resetting a password now signs every device out.** A reset changed the
   password and nothing else, so anyone already holding a refresh token —
   which is the reason people reset a password — kept minting access tokens

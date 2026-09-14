@@ -2,10 +2,10 @@ import uuid
 
 import pytest
 
-from app.models.subscription import Subscription
+from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.user import User
 from app.services import billing_service
-from app.services.billing_service import NoStripeCustomerError
+from app.services.billing_service import AlreadySubscribedError, NoStripeCustomerError
 
 
 def _auth_headers(client, email="billing@example.com", password="s3cret-password"):
@@ -62,6 +62,60 @@ def test_checkout_returns_stripe_url(client, monkeypatch):
     # Redirect targets come from settings, not hardcoded localhost.
     assert captured["success_url"].endswith("/dashboard?checkout=success")
     assert captured["cancel_url"].endswith("/dashboard?checkout=canceled")
+
+
+@pytest.mark.parametrize("status", [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING])
+def test_checkout_conflicts_when_already_subscribed(client, db_session, status):
+    """Checkout mode "subscription" would open a second one, not refuse.
+
+    Nothing about a resubmitted request proves it is a mistake, so this has
+    to be caught before Stripe is ever called.
+    """
+    headers = _auth_headers(client, email=f"already-{status.value}@example.com")
+    me = client.get("/api/v1/users/me", headers=headers).json()
+    db_session.add(
+        Subscription(user_id=uuid.UUID(me["id"]), status=status.value)
+    )
+    db_session.commit()
+
+    response = client.post("/api/v1/billing/checkout", headers=headers)
+
+    assert response.status_code == 409
+    assert "portal" in response.json()["detail"].lower()
+
+
+def test_checkout_allowed_once_subscription_is_canceled(client, db_session, monkeypatch):
+    class _FakeSession:
+        url = "https://checkout.stripe.test/session_456"
+
+    monkeypatch.setattr(
+        billing_service.stripe.checkout.Session, "create", lambda **kwargs: _FakeSession()
+    )
+
+    headers = _auth_headers(client, email="lapsed@example.com")
+    me = client.get("/api/v1/users/me", headers=headers).json()
+    db_session.add(
+        Subscription(user_id=uuid.UUID(me["id"]), status=SubscriptionStatus.CANCELED.value)
+    )
+    db_session.commit()
+
+    response = client.post("/api/v1/billing/checkout", headers=headers)
+
+    assert response.status_code == 200
+
+
+def test_create_checkout_session_raises_for_active_subscription(db_session):
+    user = User(email="service-level@example.com", hashed_password="x")
+    db_session.add(user)
+    db_session.commit()
+    db_session.add(
+        Subscription(user_id=user.id, status=SubscriptionStatus.ACTIVE.value)
+    )
+    db_session.commit()
+    db_session.refresh(user)
+
+    with pytest.raises(AlreadySubscribedError):
+        billing_service.create_checkout_session(db_session, user)
 
 
 def test_portal_conflicts_when_no_stripe_customer(client):
