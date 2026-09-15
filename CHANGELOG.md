@@ -186,6 +186,13 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The security page names webhook management, instead of showing it raw.**
+  `describeAuditAction` had no wording for the five webhook actions
+  (`webhook.endpoint_created`, `.endpoint_updated`, `.endpoint_deleted`,
+  `.secret_rotated`, `.secret_revealed`) added to the backend's audit trail
+  with outbound webhooks — so registering an endpoint or rotating its secret
+  showed up in an account's own history at `/dashboard/security` as the raw
+  action string rather than a plain-English label like the rest of the page.
 - **Checkout refuses an account that is already subscribed.** Stripe's
   checkout in `mode="subscription"` does not refuse a second subscription
   for the same customer — it opens one, and the account is billed twice. A

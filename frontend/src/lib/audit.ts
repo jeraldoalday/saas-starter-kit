@@ -50,6 +50,11 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   "api_key.revoked": "API key revoked",
   "session.revoked": "Device signed out",
   "session.revoked_all": "All devices signed out",
+  "webhook.endpoint_created": "Webhook endpoint added",
+  "webhook.endpoint_updated": "Webhook endpoint updated",
+  "webhook.endpoint_deleted": "Webhook endpoint deleted",
+  "webhook.secret_rotated": "Webhook signing secret rotated",
+  "webhook.secret_revealed": "Webhook signing secret revealed",
 };
 
 export function describeAuditAction(action: string): string {

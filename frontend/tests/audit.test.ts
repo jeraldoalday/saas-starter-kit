@@ -109,6 +109,27 @@ describe("describeAuditAction", () => {
     expect(describeAuditAction("auth.something_new")).toBe("auth.something_new");
   });
 
+  it("has wording for webhook management, not just auth and keys", () => {
+    // These are the credential events for outbound webhooks
+    // (app.models.audit_log.AuditAction on the backend) — added after the
+    // rest of this map, and easy to leave unlabelled the same way.
+    expect(describeAuditAction("webhook.endpoint_created")).toBe(
+      "Webhook endpoint added"
+    );
+    expect(describeAuditAction("webhook.endpoint_updated")).toBe(
+      "Webhook endpoint updated"
+    );
+    expect(describeAuditAction("webhook.endpoint_deleted")).toBe(
+      "Webhook endpoint deleted"
+    );
+    expect(describeAuditAction("webhook.secret_rotated")).toBe(
+      "Webhook signing secret rotated"
+    );
+    expect(describeAuditAction("webhook.secret_revealed")).toBe(
+      "Webhook signing secret revealed"
+    );
+  });
+
   it("has wording for every action the API can send", () => {
     const actions = [
       "auth.login",
@@ -127,6 +148,11 @@ describe("describeAuditAction", () => {
       "api_key.revoked",
       "session.revoked",
       "session.revoked_all",
+      "webhook.endpoint_created",
+      "webhook.endpoint_updated",
+      "webhook.endpoint_deleted",
+      "webhook.secret_rotated",
+      "webhook.secret_revealed",
     ];
 
     for (const action of actions) {
