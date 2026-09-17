@@ -43,9 +43,49 @@ interface RequestOptions {
   token?: string | null;
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, token } = options;
+/**
+ * Redeems the stored refresh token for a new access token, or resolves to
+ * null when there is nothing left to redeem it with.
+ *
+ * Registered once from app startup rather than imported directly: lib/auth.ts
+ * already imports apiRequest, and a static import back from here would make
+ * the two modules circular. Left unset (null) in tests, which is what keeps
+ * every existing 401 expectation — thrown, not silently retried — true
+ * without those tests knowing this exists.
+ */
+let refreshAccessToken: (() => Promise<string | null>) | null = null;
 
+export function registerTokenRefresh(handler: (() => Promise<string | null>) | null): void {
+  refreshAccessToken = handler;
+}
+
+// Concurrent requests that all outlive the access token would otherwise each
+// kick off their own refresh; since the refresh token rotates on redemption,
+// only the first would succeed and the rest would read a token already
+// spent, signing the session out. Sharing one in-flight attempt is what
+// makes "several requests fire the moment the token expires" behave like
+// one refresh instead of a race.
+let refreshInFlight: Promise<string | null> | null = null;
+
+function refreshOnce(): Promise<string | null> {
+  if (refreshAccessToken === null) {
+    return Promise.resolve(null);
+  }
+  if (refreshInFlight === null) {
+    refreshInFlight = refreshAccessToken().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+async function send<T>(
+  path: string,
+  method: string,
+  body: unknown,
+  token: string | null | undefined,
+  canRefresh: boolean
+): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -55,6 +95,16 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+
+  // Retried at most once, and only for a request that carried a token in
+  // the first place — an already-anonymous call has nothing to refresh, and
+  // retrying the retry would turn a dead refresh token into a loop.
+  if (response.status === 401 && canRefresh && token) {
+    const newToken = await refreshOnce();
+    if (newToken) {
+      return send<T>(path, method, body, newToken, false);
+    }
+  }
 
   if (response.status === 204) {
     return undefined as T;
@@ -68,4 +118,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   return data as T;
+}
+
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = "GET", body, token } = options;
+  return send<T>(path, method, body, token, true);
 }

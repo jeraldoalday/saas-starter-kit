@@ -4,8 +4,10 @@ import {
   clearTokens,
   fetchCurrentUser,
   getAccessToken,
+  getRefreshToken,
   login,
   logout,
+  refreshAccessToken,
   registerAccount,
   storeTokens,
 } from "@/lib/auth";
@@ -124,6 +126,59 @@ describe("fetchCurrentUser", () => {
     await fetchCurrentUser();
 
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer access-1");
+  });
+});
+
+describe("refreshAccessToken", () => {
+  it("redeems the stored refresh token and stores the new pair", async () => {
+    storeTokens(tokens);
+    const newTokens: TokenPair = {
+      access_token: "access-2",
+      refresh_token: "refresh-2",
+      token_type: "bearer",
+    };
+    const fetchMock = mockFetch(newTokens);
+
+    const result = await refreshAccessToken();
+
+    expect(result).toBe("access-2");
+    expect(getAccessToken()).toBe("access-2");
+    // The rotated refresh token is what has to be kept: redeeming the old
+    // one again would fail, since the backend retires it on rotation.
+    expect(getRefreshToken()).toBe("refresh-2");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/auth/refresh");
+    expect(JSON.parse(init.body)).toEqual({ refresh_token: "refresh-1" });
+  });
+
+  it("returns null without calling the server when there is no refresh token", async () => {
+    const fetchMock = mockFetch();
+
+    const result = await refreshAccessToken();
+
+    expect(result).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("clears both tokens when the server refuses the refresh token", async () => {
+    storeTokens(tokens);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        statusText: "Unauthorized",
+        json: async () => ({ detail: "Invalid refresh token" }),
+      })
+    );
+
+    const result = await refreshAccessToken();
+
+    expect(result).toBeNull();
+    // A refresh token that didn't work is not worth holding on to — the
+    // account is signed out, not left retrying the same dead token.
+    expect(getAccessToken()).toBeNull();
+    expect(getRefreshToken()).toBeNull();
   });
 });
 

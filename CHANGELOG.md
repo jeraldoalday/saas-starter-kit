@@ -186,6 +186,18 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The SPA now redeems its refresh token instead of signing out at
+  `ACCESS_TOKEN_EXPIRE_MINUTES`.** `POST /api/v1/auth/refresh` existed and
+  was fully tested on the backend, but nothing in `frontend/src` ever called
+  it — every request the client made carried the original access token and
+  nothing rotated it, so a signed-in tab was silently logged out the moment
+  that token expired (30 minutes by default) regardless of how long its
+  refresh token, and the `auth_sessions` row behind it, still had to run.
+  `apiRequest` now retries a request once with a freshly redeemed access
+  token when it comes back `401`, and concurrent requests that expire at the
+  same moment share one redemption instead of racing the refresh token's
+  single-use rotation against each other. A request that carried no token,
+  or a refresh that itself fails, still ends the session exactly as before.
 - **The security page names webhook management, instead of showing it raw.**
   `describeAuditAction` had no wording for the five webhook actions
   (`webhook.endpoint_created`, `.endpoint_updated`, `.endpoint_deleted`,

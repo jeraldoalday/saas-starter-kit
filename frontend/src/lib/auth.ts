@@ -1,6 +1,17 @@
 import { apiRequest } from "@/lib/api-client";
 import type { TokenPair, User } from "@/lib/types";
 
+// `token` is intentionally omitted: the refresh token travels in the body,
+// not as a bearer credential, so this call carries no Authorization header
+// and api-client's own 401-retry never fires for it — the one request that
+// must not try to refresh itself out of a 401.
+function redeemRefreshToken(refreshToken: string): Promise<TokenPair> {
+  return apiRequest<TokenPair>("/auth/refresh", {
+    method: "POST",
+    body: { refresh_token: refreshToken },
+  });
+}
+
 const ACCESS_TOKEN_KEY = "saas.access_token";
 const REFRESH_TOKEN_KEY = "saas.refresh_token";
 
@@ -45,6 +56,31 @@ export async function login(email: string, password: string): Promise<User> {
 export function fetchCurrentUser(): Promise<User> {
   const token = getAccessToken();
   return apiRequest<User>("/users/me", { token });
+}
+
+/**
+ * Redeem the stored refresh token for a new token pair, storing it.
+ *
+ * This is what keeps a session alive past the access token's own lifetime —
+ * without it, every sign-in would end the moment ACCESS_TOKEN_EXPIRE_MINUTES
+ * elapsed regardless of how long the refresh token backing it still had to
+ * run. Returns the new access token, or null when there is nothing to redeem
+ * (no refresh token stored) or the server refused it — revoked, expired, or
+ * already rotated away by another tab — in which case the stored tokens are
+ * cleared, since neither is good for anything further.
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (refreshToken === null) return null;
+
+  try {
+    const tokens = await redeemRefreshToken(refreshToken);
+    storeTokens(tokens);
+    return tokens.access_token;
+  } catch {
+    clearTokens();
+    return null;
+  }
 }
 
 /**
