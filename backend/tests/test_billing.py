@@ -41,6 +41,54 @@ def test_webhook_rejects_invalid_signature(client):
     assert response.status_code == 400
 
 
+def test_webhook_accepts_a_valid_signature(client, db_session, monkeypatch):
+    """The endpoint itself, not just handle_webhook_event: reading the body
+    and the signature header, calling the service, and answering 204.
+    """
+    monkeypatch.setattr(billing_service.settings, "stripe_webhook_secret", "whsec_test")
+    monkeypatch.setattr(
+        billing_service.stripe.Webhook,
+        "construct_event",
+        lambda *a, **kw: {"id": "evt_1", "type": "some.unhandled.type", "data": {"object": {}}},
+    )
+
+    response = client.post(
+        "/api/v1/billing/webhook",
+        content=b'{"type": "some.unhandled.type"}',
+        headers={"stripe-signature": "valid"},
+    )
+
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+def test_subscription_returns_the_current_subscription(client, db_session):
+    headers = _auth_headers(client, email="subscribed@example.com")
+    me = client.get("/api/v1/users/me", headers=headers).json()
+    db_session.add(
+        Subscription(
+            user_id=uuid.UUID(me["id"]),
+            stripe_customer_id="cus_sub_test",
+            status=SubscriptionStatus.ACTIVE.value,
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/api/v1/billing/subscription", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == SubscriptionStatus.ACTIVE.value
+
+
+def test_subscription_is_null_without_one(client):
+    headers = _auth_headers(client, email="nosub@example.com")
+
+    response = client.get("/api/v1/billing/subscription", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
 def test_checkout_returns_stripe_url(client, monkeypatch):
     class _FakeSession:
         url = "https://checkout.stripe.test/session_123"
