@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import MIN_SECRET_KEY_LENGTH, Settings
+from app.core.config import MIN_PRODUCTION_BCRYPT_ROUNDS, MIN_SECRET_KEY_LENGTH, Settings
 
 SECURE_SECRET_KEY = "x" * MIN_SECRET_KEY_LENGTH
 
@@ -14,6 +14,12 @@ def _production_kwargs(**overrides) -> dict:
         "stripe_secret_key": "sk_live_realvalue",
         "stripe_webhook_secret": "whsec_realvalue",
         "stripe_price_id_monthly": "price_realvalue",
+        # Explicit rather than left to the ambient environment: this suite
+        # itself runs with BCRYPT_ROUNDS lowered for speed (see the
+        # Makefile), and a "secure production config" fixture should not
+        # become insecure just because of the setting the test runner
+        # happens to export.
+        "bcrypt_rounds": MIN_PRODUCTION_BCRYPT_ROUNDS,
     }
     kwargs.update(overrides)
     return kwargs
@@ -45,6 +51,27 @@ def test_production_rejects_short_secret_key():
 def test_production_rejects_debug_enabled():
     with pytest.raises(ValidationError, match="debug"):
         Settings(**_production_kwargs(debug=True))
+
+
+def test_development_default_bcrypt_rounds(monkeypatch):
+    # Isolated from the ambient environment: this suite itself runs with
+    # BCRYPT_ROUNDS lowered for speed (see the Makefile), which is exactly
+    # the override this test must not pick up when checking the real
+    # default.
+    monkeypatch.delenv("BCRYPT_ROUNDS", raising=False)
+
+    assert Settings().bcrypt_rounds == 12
+
+
+def test_production_rejects_bcrypt_rounds_below_the_floor():
+    with pytest.raises(ValidationError, match="bcrypt_rounds"):
+        Settings(**_production_kwargs(bcrypt_rounds=MIN_PRODUCTION_BCRYPT_ROUNDS - 1))
+
+
+def test_production_accepts_bcrypt_rounds_at_the_floor():
+    settings = Settings(**_production_kwargs(bcrypt_rounds=MIN_PRODUCTION_BCRYPT_ROUNDS))
+
+    assert settings.bcrypt_rounds == MIN_PRODUCTION_BCRYPT_ROUNDS
 
 
 @pytest.mark.parametrize(

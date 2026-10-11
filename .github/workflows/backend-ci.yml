@@ -30,7 +30,12 @@ jobs:
         run: ruff check .
 
       - name: Test
+        # The suite hashes a password in nearly every fixture; a cheap bcrypt
+        # cost factor here only speeds up CI - production keeps the real
+        # default of 12, enforced separately for ENVIRONMENT=production.
         run: pytest --tb=short
+        env:
+          BCRYPT_ROUNDS: "4"
 
   # The unit suite builds its schema with create_all against SQLite, so it
   # proves the models work and says nothing about whether the migrations do.

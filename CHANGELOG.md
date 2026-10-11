@@ -183,6 +183,13 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   page and its total to that window. Rows are still kept for
   `AUDIT_RETENTION_DAYS` regardless of plan, so upgrading reveals history
   that already exists.
+- **`BCRYPT_ROUNDS` configures bcrypt's cost factor**, default `12`,
+  rejected below `10` under `ENVIRONMENT=production` the same way an
+  insecure `SECRET_KEY` already is. Exists mainly so the test suite — which
+  hashes a password in nearly every fixture — can run at a much cheaper
+  setting (`make test-backend` and CI both do) without the production
+  default ever moving: a bcrypt hash carries its own cost factor, so
+  lowering this does not touch a password already hashed at a higher one.
 
 ### Fixed
 

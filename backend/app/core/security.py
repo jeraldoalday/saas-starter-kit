@@ -32,7 +32,7 @@ def hash_password(password: str) -> str:
         raise PasswordTooLongError(
             f"Password must be at most {MAX_PASSWORD_BYTES} bytes when UTF-8 encoded"
         )
-    return bcrypt.hashpw(encoded, bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(encoded, bcrypt.gensalt(rounds=settings.bcrypt_rounds)).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

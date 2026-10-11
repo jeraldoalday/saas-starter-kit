@@ -9,7 +9,10 @@ dev-frontend:
 test: test-backend test-frontend
 
 test-backend:
-	cd backend && pytest
+	# The suite hashes a password in nearly every fixture; a cheap bcrypt cost
+	# factor here only speeds up the test run - production keeps the real
+	# default of 12, enforced separately for ENVIRONMENT=production.
+	cd backend && BCRYPT_ROUNDS=4 pytest
 
 test-frontend:
 	cd frontend && npm test -- --run

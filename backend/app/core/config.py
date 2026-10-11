@@ -14,6 +14,10 @@ _INSECURE_DEFAULTS = {
     "stripe_price_id_monthly": "price_placeholder",
 }
 MIN_SECRET_KEY_LENGTH = 32
+# OWASP's floor for bcrypt as of this writing. Below it the setting is doing
+# the opposite of its job, and the obvious way to get there is lowering it
+# for test speed and forgetting to scope that to tests.
+MIN_PRODUCTION_BCRYPT_ROUNDS = 10
 
 # Kept as plain strings rather than imported from app.services.alerts: that
 # package's factory reads settings, so importing it here would close a cycle.
@@ -34,6 +38,15 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 14
+
+    # bcrypt's cost factor. 12 is a reasonable floor for a password an
+    # attacker might try offline; raising it is a legitimate way to keep pace
+    # with faster hardware. Configurable mainly so the test suite — which
+    # hashes a password in nearly every fixture — can run at a much cheaper
+    # setting without the production default ever moving: a hash stores its
+    # own cost factor, so dropping this does not touch any password already
+    # hashed at 12.
+    bcrypt_rounds: int = 12
 
     database_url: str = "postgresql+psycopg://saas:saas@localhost:5432/saas"
 
@@ -197,6 +210,11 @@ class Settings(BaseSettings):
             )
         if self.debug:
             problems.append("debug is enabled")
+        if self.bcrypt_rounds < MIN_PRODUCTION_BCRYPT_ROUNDS:
+            problems.append(
+                f"bcrypt_rounds is {self.bcrypt_rounds} (minimum "
+                f"{MIN_PRODUCTION_BCRYPT_ROUNDS} in production)"
+            )
 
         if problems:
             raise ValueError(
