@@ -289,6 +289,12 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   another zone was compared as though its local reading were UTC — off by
   the zone's offset either side of where the window falls. Deployments whose
   scheduled job passes no clock at all were never affected.
+- **A password that clears the character limit but not the byte one no
+  longer 500s.** The schema caps a password at 72 characters; bcrypt's real
+  limit is 72 *bytes*, and a multi-byte password (72 accented letters, or
+  fewer emoji) can clear the first while failing the second. `/register` and
+  `/reset-password` now answer `400` with a message naming the byte limit,
+  instead of the request reaching `hash_password()` and raising unhandled.
 
 ### Changed
 

@@ -21,6 +21,20 @@ def test_register_rejects_overlong_password(client):
     assert response.status_code == 422
 
 
+def test_register_rejects_a_password_that_clears_the_character_limit_but_not_the_byte_one(
+    client,
+):
+    """72 'é' is 72 characters (passes the schema's max_length) but 144 UTF-8
+    bytes (fails bcrypt's real limit) - this must come back as a clean 400,
+    not an unhandled 500."""
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"email": "multibyte@example.com", "password": "é" * 72, "full_name": None},
+    )
+    assert response.status_code == 400
+    assert "72 bytes" in response.json()["detail"]
+
+
 def test_password_is_hashed_not_stored_plaintext(client, db_session):
     from app.models.user import User
 

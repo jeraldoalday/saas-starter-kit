@@ -10,6 +10,7 @@ from app.api.deps_rate_limit import (
 )
 from app.api.request_info import client_ip, request_origin, user_agent
 from app.core.security import (
+    PasswordTooLongError,
     TokenType,
     create_access_token,
     create_refresh_token,
@@ -86,6 +87,13 @@ def register(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         ) from exc
+    except PasswordTooLongError as exc:
+        # The schema's max_length counts characters, bcrypt's limit counts
+        # UTF-8 bytes - a password of 72 multi-byte characters (e.g. accented
+        # letters or emoji) clears the first and trips the second. Without
+        # this it reaches the client as an unhandled 500 instead of the 400
+        # every other rejected password gets.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     send_verification_email(db, user)
     record_event(db, EventName.USER_REGISTERED, user=user)
@@ -136,7 +144,12 @@ def forgot_password(
 def reset_password_endpoint(
     data: ResetPasswordRequest, request: Request, db: Session = Depends(get_db)
 ) -> MessageResponse:
-    user = reset_password(db, data.token, data.new_password)
+    try:
+        user = reset_password(db, data.token, data.new_password)
+    except PasswordTooLongError as exc:
+        # Same byte-vs-character gap as /register - see the comment there.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     if user is None:
         # Not audited. There is no account to attribute it to — a token that
         # did not resolve names nobody — and a row saying only "an unknown

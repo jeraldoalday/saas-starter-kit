@@ -139,6 +139,25 @@ def test_short_new_password_is_rejected(client, outbox):
     assert response.status_code == 422
 
 
+def test_reset_rejects_a_password_that_clears_the_character_limit_but_not_the_byte_one(
+    client, outbox
+):
+    """72 'é' is 72 characters (passes the schema's max_length) but 144 UTF-8
+    bytes (fails bcrypt's real limit) - this must come back as a clean 400,
+    not an unhandled 500."""
+    _register(client)
+    outbox.clear()
+    client.post("/api/v1/auth/forgot-password", json={"email": EMAIL})
+
+    response = client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": _reset_token(outbox), "new_password": "é" * 72},
+    )
+
+    assert response.status_code == 400
+    assert "72 bytes" in response.json()["detail"]
+
+
 def test_a_verification_token_cannot_reset_a_password(client, db_session, outbox):
     _register(client)
     user = db_session.query(User).filter(User.email == EMAIL).one()
