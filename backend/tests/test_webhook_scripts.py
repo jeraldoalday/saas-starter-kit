@@ -144,6 +144,50 @@ def test_an_empty_queue_reports_a_quiet_pass(db_session, endpoint, capsys):
     assert "attempted=0" in capsys.readouterr().out
 
 
+def test_loop_runs_a_pass_and_stops_cleanly_on_interrupt(
+    db_session, endpoint, capsys, monkeypatch
+):
+    """--loop is how this runs as a long-lived worker instead of a cron job.
+
+    Ctrl-C is the ordinary way someone stops a worker started by hand, so it
+    must exit 0 with a short message - not a stack trace - and it must have
+    actually attempted the pass already queued before sleeping.
+    """
+    monkeypatch.setattr(
+        deliver_webhooks, "deliver_due", _pass_through(DeliveryResult(True, 200, None))
+    )
+    _queue(db_session, endpoint)
+
+    def _raise(_seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(deliver_webhooks.time, "sleep", _raise)
+
+    assert deliver_webhooks.main(["--loop"]) == 0
+
+    captured = capsys.readouterr()
+    assert "attempted=1" in captured.out
+    assert "Stopped." in captured.err
+
+
+def test_loop_floors_a_too_small_interval(db_session, endpoint, capsys, monkeypatch):
+    """A worker polling faster than the floor would spend more time asking
+    the database whether anything is due than any webhook's latency budget
+    could justify."""
+    monkeypatch.setattr(
+        deliver_webhooks, "deliver_due", _pass_through(DeliveryResult(True, 200, None))
+    )
+
+    def _raise(_seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(deliver_webhooks.time, "sleep", _raise)
+
+    deliver_webhooks.main(["--loop", "--interval", "0"])
+
+    assert f"every {deliver_webhooks.MIN_INTERVAL_SECONDS}s" in capsys.readouterr().err
+
+
 def test_the_worker_warns_when_queueing_is_switched_off(
     db_session, endpoint, capsys, monkeypatch
 ):
