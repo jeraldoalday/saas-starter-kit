@@ -62,6 +62,11 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `/api/v1/admin/overview`.** The second is the operational one: a pending
   figure that only climbs means the delivery worker is not running, which is
   otherwise a completely silent failure.
+- **`disabled_webhook_endpoints` on `/api/v1/admin/overview`.** Counts only
+  endpoints the delivery worker itself switched off after 20 consecutive
+  failures, not ones an owner turned off by hand — a figure that climbs
+  means receivers are failing across the deployment, not that one customer
+  is having a bad day.
 
 - **API keys.** Long-lived credentials for calling the API without a browser
   session: `POST/GET /api/v1/api-keys` and `DELETE /api/v1/api-keys/{id}`,

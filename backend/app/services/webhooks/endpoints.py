@@ -354,6 +354,23 @@ def count_endpoints(db: Session) -> int:
     )
 
 
+def count_disabled_endpoints(db: Session) -> int:
+    """Endpoints the delivery worker gave up on — for the admin overview.
+
+    Only the auto-disable column counts: an owner switching their own
+    endpoint off is a product decision, not a symptom. A figure here that
+    tracks `total endpoints` upward means receivers are failing across the
+    deployment rather than one account having a bad day, which a single
+    endpoint's failure count cannot show.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(WebhookEndpoint)
+        .where(WebhookEndpoint.disabled_at.is_not(None))
+    )
+    return int(db.execute(stmt).scalar_one())
+
+
 __all__ = [
     "DEFAULT_DELIVERY_PAGE_SIZE",
     "MAX_DELIVERY_PAGE_SIZE",
@@ -362,6 +379,7 @@ __all__ = [
     "EndpointNotFoundError",
     "active_endpoint_count",
     "clamp_delivery_page_size",
+    "count_disabled_endpoints",
     "count_endpoints",
     "create_endpoint",
     "delete_endpoint",

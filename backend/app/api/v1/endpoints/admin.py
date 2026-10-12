@@ -21,7 +21,7 @@ from app.services.audit_service import count_entries, failed_login_count
 from app.services.audit_service import record as record_audit
 from app.services.session_service import count_all_active_sessions, count_sessions
 from app.services.webhooks.dispatch import pending_count
-from app.services.webhooks.endpoints import count_endpoints
+from app.services.webhooks.endpoints import count_disabled_endpoints, count_endpoints
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -68,6 +68,7 @@ def overview(
         subscriptions_by_status=by_status,
         webhook_endpoints=count_endpoints(db),
         pending_webhook_deliveries=pending_count(db),
+        disabled_webhook_endpoints=count_disabled_endpoints(db),
         failed_logins_last_hour=failed_login_count(db, hours=1),
         audit_entries=count_entries(db),
     )

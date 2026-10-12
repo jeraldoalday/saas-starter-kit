@@ -59,6 +59,11 @@ class AdminOverview(BaseModel):
     # failure that is otherwise completely silent.
     webhook_endpoints: int
     pending_webhook_deliveries: int
+    # Switched off by the delivery worker itself, after 20 consecutive
+    # failures - not by the owner. A figure that climbs across accounts
+    # means receivers are failing deployment-wide rather than one customer
+    # having a bad day.
+    disabled_webhook_endpoints: int
 
     # The trail's own size, for the question the retention prune answers. A
     # figure far above what the window should hold means the scheduled prune

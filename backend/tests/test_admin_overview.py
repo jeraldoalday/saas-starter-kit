@@ -127,6 +127,44 @@ def test_counts_webhook_endpoints_and_the_queue_behind_them(
     assert _overview(client, admin)["pending_webhook_deliveries"] == 1
 
 
+def test_disabled_endpoints_are_counted_separately_from_the_total(
+    client, db_session, admin
+):
+    """Only the worker's own switch counts, not the owner's.
+
+    A climbing figure here means receivers are failing across the
+    deployment, which a single endpoint's failure count cannot show. An
+    owner switching their own endpoint off by hand is a product decision,
+    not that symptom, so it must not be counted here.
+    """
+    from app.models.webhook_endpoint import WebhookEndpoint
+
+    user = db_session.query(User).filter(User.email == "overview-admin@example.com").one()
+    auto_disabled = WebhookEndpoint(
+        user_id=user.id,
+        url="https://receiver.example.com/auto-disabled",
+        secret="whsec_test-secret-1",
+        event_types=[],
+        created_at=datetime.now(UTC),
+        disabled_at=datetime.now(UTC),
+        disabled_reason="20 consecutive failed deliveries",
+    )
+    owner_disabled = WebhookEndpoint(
+        user_id=user.id,
+        url="https://receiver.example.com/owner-disabled",
+        secret="whsec_test-secret-2",
+        event_types=[],
+        created_at=datetime.now(UTC),
+        is_active=False,
+    )
+    db_session.add_all([auto_disabled, owner_disabled])
+    db_session.commit()
+
+    body = _overview(client, admin)
+    assert body["webhook_endpoints"] == 2
+    assert body["disabled_webhook_endpoints"] == 1
+
+
 def test_groups_subscriptions_by_status(client, db_session, admin):
     user = db_session.query(User).filter(User.email == "overview-admin@example.com").one()
     db_session.add(
