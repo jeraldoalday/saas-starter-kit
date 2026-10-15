@@ -78,7 +78,11 @@ export function BillingCard() {
               : "No active subscription. Start a checkout session to subscribe."}
           </p>
 
-          {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
+          {error && (
+            <p className="mb-4 text-sm text-red-400" role="alert">
+              {error}
+            </p>
+          )}
 
           <Button
             onClick={() => redirectTo(active ? openBillingPortal : startCheckout)}

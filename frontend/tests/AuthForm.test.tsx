@@ -120,6 +120,18 @@ describe("AuthForm error handling", () => {
     expect(screen.queryByText("Dashboard page")).not.toBeInTheDocument();
   });
 
+  it("announces a failed sign-in to assistive tech", async () => {
+    // role="alert" is what gets a screen reader to speak the failure
+    // without the user having to go looking for it after submitting.
+    authMock.login.mockRejectedValue(new ApiClientError(401, "Incorrect email or password"));
+    renderForm("login");
+    fillCredentials();
+
+    fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Incorrect email or password");
+  });
+
   it("falls back to a generic message for a non-API failure", async () => {
     authMock.login.mockRejectedValue(new TypeError("network down"));
     renderForm("login");

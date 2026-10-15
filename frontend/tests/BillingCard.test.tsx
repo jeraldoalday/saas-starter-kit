@@ -1,16 +1,18 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BillingCard } from "@/components/BillingCard";
+import { ApiClientError } from "@/lib/api-client";
 import type { Subscription } from "@/lib/types";
 
 vi.mock("@/lib/billing", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/billing")>();
-  return { ...actual, fetchSubscription: vi.fn() };
+  return { ...actual, fetchSubscription: vi.fn(), startCheckout: vi.fn() };
 });
 
-const { fetchSubscription } = await import("@/lib/billing");
+const { fetchSubscription, startCheckout } = await import("@/lib/billing");
 const fetchSubscriptionMock = vi.mocked(fetchSubscription);
+const startCheckoutMock = vi.mocked(startCheckout);
 
 function subscription(overrides: Partial<Subscription> = {}): Subscription {
   return {
@@ -73,5 +75,17 @@ describe("BillingCard", () => {
 
     expect(await screen.findByText(/Your plan is trialing/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Manage billing" })).toBeInTheDocument();
+  });
+
+  it("announces a failed checkout redirect to assistive tech", async () => {
+    // role="alert" is what gets a screen reader to speak this without the
+    // user having to go looking for it after clicking "Subscribe".
+    fetchSubscriptionMock.mockResolvedValue(null);
+    startCheckoutMock.mockRejectedValue(new ApiClientError(500, "Could not start checkout"));
+
+    render(<BillingCard />);
+    fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not start checkout");
   });
 });
