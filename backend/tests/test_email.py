@@ -58,6 +58,61 @@ def test_smtp_sender_survives_os_errors(monkeypatch):
     assert SmtpEmailSender(host="localhost", port=587).send(_message()) is False
 
 
+class _FakeSmtp:
+    """Stands in for smtplib.SMTP's context-manager protocol."""
+
+    def __init__(self):
+        self.started_tls = False
+        self.login_args: tuple[str, str] | None = None
+        self.sent_message = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def starttls(self):
+        self.started_tls = True
+
+    def login(self, username, password):
+        self.login_args = (username, password)
+
+    def send_message(self, mime):
+        self.sent_message = mime
+
+
+def test_smtp_sender_sends_over_tls_with_login_and_html_alternative(monkeypatch):
+    fake = _FakeSmtp()
+    monkeypatch.setattr(smtplib, "SMTP", lambda *args, **kwargs: fake)
+    sender = SmtpEmailSender(
+        host="localhost",
+        port=587,
+        username="user",
+        password="pw",
+        from_address="noreply@example.com",
+    )
+    message = EmailMessage(
+        to="a@example.com", subject="Subject", text_body="Body", html_body="<p>Body</p>"
+    )
+
+    assert sender.send(message) is True
+    assert fake.started_tls is True
+    assert fake.login_args == ("user", "pw")
+    assert fake.sent_message["To"] == "a@example.com"
+    assert fake.sent_message.get_body(preferencelist=("html",)) is not None
+
+
+def test_smtp_sender_skips_tls_and_login_when_not_configured(monkeypatch):
+    fake = _FakeSmtp()
+    monkeypatch.setattr(smtplib, "SMTP", lambda *args, **kwargs: fake)
+    sender = SmtpEmailSender(host="localhost", port=25, use_tls=False)
+
+    assert sender.send(_message()) is True
+    assert fake.started_tls is False
+    assert fake.login_args is None
+
+
 @pytest.mark.parametrize(
     ("builder", "url"),
     [
