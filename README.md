@@ -8,6 +8,8 @@ This is a starting point meant to be sold or licensed as a boilerplate —
 it deliberately ships only what a real SaaS needs on day one, so the buyer
 isn't paying for dead weight.
 
+> **How this project is built:** I develop this starter kit with AI coding agents. I decide what it should ship with, review each change and its tests, and merge what holds up.
+
 ## Stack
 
 | Layer     | Tech                                                   |
