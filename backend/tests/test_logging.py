@@ -1,9 +1,12 @@
 import json
 import logging
 
+import pytest
+from starlette.requests import Request
+
 from app.core.logging import JsonFormatter
 from app.core.request_context import get_request_id, reset_request_id, set_request_id
-from app.middleware.request_id import REQUEST_ID_HEADER
+from app.middleware.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
 
 
 def _record(**kwargs) -> logging.LogRecord:
@@ -65,3 +68,22 @@ def test_inbound_request_id_is_preserved(client):
     response = client.get("/api/v1/health", headers={REQUEST_ID_HEADER: "trace-123"})
 
     assert response.headers[REQUEST_ID_HEADER] == "trace-123"
+
+
+async def test_dispatch_logs_and_reraises_when_the_handler_raises(caplog):
+    """An unhandled exception downstream must still be logged and must still
+    propagate - this middleware observes failures, it does not swallow them."""
+    middleware = RequestIdMiddleware(app=None)
+    request = Request({"type": "http", "method": "GET", "path": "/boom", "headers": []})
+
+    async def call_next(_request: Request):
+        raise ValueError("boom")
+
+    with caplog.at_level(logging.ERROR, logger="app.request"):
+        with pytest.raises(ValueError, match="boom"):
+            await middleware.dispatch(request, call_next)
+
+    assert any(record.getMessage() == "request failed" for record in caplog.records)
+    # the context var is unbound again once the exception has propagated,
+    # so it cannot leak into whichever request runs next.
+    assert get_request_id() is None
