@@ -1,3 +1,4 @@
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import (
@@ -34,7 +35,15 @@ def register_user(db: Session, data: UserCreate) -> User:
         full_name=data.full_name,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        # Two registrations for the same address landed between the lookup
+        # above and this commit — the other one won the unique constraint.
+        # Without this, the loser surfaces as an unhandled 500 instead of
+        # the same 409 the lookup above would have given it a moment later.
+        db.rollback()
+        raise EmailAlreadyRegisteredError(data.email) from exc
     db.refresh(user)
     return user
 

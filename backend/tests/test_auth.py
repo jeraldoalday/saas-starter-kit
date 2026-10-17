@@ -1,3 +1,6 @@
+import pytest
+
+
 def _register(client, email="user@example.com", password="s3cret-password"):
     return client.post(
         "/api/v1/auth/register",
@@ -59,6 +62,49 @@ def test_register_duplicate_email_conflicts(client):
     _register(client)
     response = _register(client)
     assert response.status_code == 409
+
+
+def test_register_handles_a_concurrent_duplicate_as_a_conflict_not_a_crash(
+    client, db_session, monkeypatch
+):
+    """Two registrations for the same address can both pass register_user's
+    own "does this email exist" lookup before either commits - the loser
+    then hits the database's unique constraint instead of the lookup. That
+    must still come back as the same 409 a sequential duplicate gets, not an
+    unhandled 500."""
+    from app.models.user import User
+    from app.services import auth_service
+
+    original_commit = db_session.commit
+    inserted = False
+
+    def commit_after_racing_insert():
+        nonlocal inserted
+        if not inserted:
+            # Simulate the other request's registration landing first, in a
+            # separate session, after this one's own lookup already ran.
+            inserted = True
+            racing_session = db_session.get_bind().connect()
+            racing_session.execute(
+                User.__table__.insert().values(
+                    email="race@example.com",
+                    hashed_password="x",
+                    full_name=None,
+                )
+            )
+            racing_session.commit()
+            racing_session.close()
+        return original_commit()
+
+    monkeypatch.setattr(db_session, "commit", commit_after_racing_insert)
+
+    from app.schemas.user import UserCreate
+
+    with pytest.raises(auth_service.EmailAlreadyRegisteredError):
+        auth_service.register_user(
+            db_session,
+            UserCreate(email="race@example.com", password="s3cret-password", full_name=None),
+        )
 
 
 def test_login_returns_token_pair(client):
