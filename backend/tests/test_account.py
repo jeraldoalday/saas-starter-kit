@@ -326,6 +326,22 @@ def test_deleting_an_account_destroys_its_webhook_endpoints(client, db_session):
     assert db_session.query(WebhookDelivery).count() == 0
 
 
+def test_deleting_an_account_destroys_its_sessions(client, db_session):
+    """Same reasoning as api_keys: a deleted account must not leave behind
+    a row that would still authenticate a refresh."""
+    email = "sessions-deleted@example.com"
+    headers = _auth(client, email=email)
+    user = db_session.query(User).filter(User.email == email).one()
+    assert db_session.query(AuthSession).filter(AuthSession.user_id == user.id).count() > 0
+
+    response = client.request(
+        "DELETE", "/api/v1/users/me", json={"password": PASSWORD}, headers=headers
+    )
+
+    assert response.status_code == 204
+    assert db_session.query(AuthSession).filter(AuthSession.user_id == user.id).count() == 0
+
+
 def test_export_reports_no_keys_as_an_empty_list(client):
     headers = _auth(client, email="no-keys@example.com")
 
