@@ -155,6 +155,14 @@ def test_an_out_of_range_port_is_refused():
         validate_webhook_url("https://example.com:99999/hooks")
 
 
+def test_a_url_urlparse_itself_rejects_is_refused():
+    """A malformed IPv6 host literal makes `urlparse` itself raise, rather
+    than returning something whose port or host access fails later -- the
+    other case where the parse step, not just the result, needs handling."""
+    with pytest.raises(UnsafeWebhookUrlError, match="could not be parsed"):
+        validate_webhook_url("https://[::1/hooks")
+
+
 def test_the_insecure_escape_hatch_permits_a_local_receiver(monkeypatch):
     """What building a receiver on your own machine needs.
 
