@@ -10,12 +10,20 @@ customer at once and nothing else would notice.
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.security import hash_password
 from app.core.timeutils import as_utc
 from app.models.user import User
 from app.models.webhook_delivery import DeliveryStatus, WebhookDelivery
 from app.models.webhook_endpoint import WebhookEndpoint, WebhookEventType
+from app.services.alerts import (
+    AlertRouter,
+    InMemoryAlertSender,
+    Severity,
+    get_alert_router,
+    set_alert_router,
+)
 from app.services.webhooks.dispatch import (
     AUTO_DISABLE_AFTER_FAILURES,
     MAX_ATTEMPTS,
@@ -87,6 +95,17 @@ def server_error() -> DeliveryResult:
 
 def unreachable() -> DeliveryResult:
     return DeliveryResult(False, None, "Connection refused")
+
+
+@pytest.fixture
+def alerts():
+    """Install an inspectable alert router, and restore the real one after."""
+    sender = InMemoryAlertSender()
+    installed = AlertRouter(sender, min_severity=Severity.INFO)
+    previous = get_alert_router()
+    set_alert_router(installed)
+    yield sender
+    set_alert_router(previous)
 
 
 # --- queueing -------------------------------------------------------------
@@ -162,6 +181,35 @@ def test_dispatch_is_off_when_webhooks_are_disabled(db_session, user, endpoint, 
     monkeypatch.setattr(settings, "webhooks_enabled", False)
 
     assert dispatch_event(db_session, WebhookEventType.API_KEY_CREATED, user=user) == []
+
+
+def test_a_queueing_failure_does_not_propagate(db_session, user, endpoint, monkeypatch):
+    """A broken insert must not turn into a 500 for the request that
+    triggered the event the webhook was meant to report."""
+
+    def _explode():
+        raise SQLAlchemyError("disk on fire")
+
+    monkeypatch.setattr(db_session, "commit", _explode)
+
+    assert dispatch_event(db_session, WebhookEventType.API_KEY_CREATED, user=user) == []
+
+
+def test_a_queueing_failure_rolls_back_and_raises_an_alert(
+    db_session, user, endpoint, monkeypatch, alerts
+):
+    def _explode():
+        raise SQLAlchemyError("disk on fire")
+
+    monkeypatch.setattr(db_session, "commit", _explode)
+
+    dispatch_event(db_session, WebhookEventType.API_KEY_CREATED, user=user)
+
+    # No half-written delivery survives the failed commit.
+    assert db_session.query(WebhookDelivery).count() == 0
+    # And subscribers were not silently left unnotified: someone who can act
+    # on it was told.
+    assert alerts.titles() == ["Webhook dispatch failed"]
 
 
 def test_one_event_fans_out_to_every_subscribed_endpoint(db_session, user, endpoint):
