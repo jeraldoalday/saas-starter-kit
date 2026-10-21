@@ -163,6 +163,35 @@ def test_refresh_rejects_access_token(client):
     assert response.status_code == 401
 
 
+def test_refresh_rejects_a_token_whose_subject_is_not_a_uuid(client):
+    from app.core.security import create_refresh_token
+
+    token = create_refresh_token(subject="not-a-uuid")
+
+    response = client.post("/api/v1/auth/refresh", json={"refresh_token": token})
+    assert response.status_code == 401
+
+
+def test_refresh_rejects_a_deactivated_users_token(client, db_session):
+    from app.models.user import User
+
+    _register(client)
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "user@example.com", "password": "s3cret-password"},
+    )
+    refresh_token = login.json()["refresh_token"]
+
+    user = db_session.query(User).filter_by(email="user@example.com").one()
+    user.is_active = False
+    db_session.commit()
+
+    response = client.post(
+        "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
+    )
+    assert response.status_code == 401
+
+
 def test_refresh_issues_new_access_token(client):
     _register(client)
     login = client.post(
