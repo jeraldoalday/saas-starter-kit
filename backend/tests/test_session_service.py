@@ -83,6 +83,30 @@ def test_session_expiry_follows_the_tokens_own_claim(db_session, user):
     assert delta < 60
 
 
+def test_session_expiry_falls_back_when_exp_claim_is_unreadable(db_session, user):
+    """An exp claim datetime.fromtimestamp chokes on must not crash a login.
+
+    Unreachable for tokens this application mints, but a row still has to
+    get an expiry from somewhere — the configured lifetime, not a 500.
+    """
+    from jose import jwt
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    raw = jwt.encode(
+        {"sub": str(user.id), "type": "refresh", "exp": 99999999999999},
+        settings.secret_key,
+        algorithm=settings.algorithm,
+    )
+
+    session = start_session(db_session, user, raw)
+
+    expected = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
+    delta = abs((session.expires_at.replace(tzinfo=UTC) - expected).total_seconds())
+    assert delta < 60
+
+
 def test_context_is_recorded_and_truncated(db_session, user):
     session = start_session(
         db_session,
