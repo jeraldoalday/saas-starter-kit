@@ -18,9 +18,10 @@ rules that follow from that:
    number to recognise.
 3. **A limit here is a product promise, not a safety bound.** The services
    keep their own hard ceilings (`MAX_ACTIVE_KEYS_PER_USER`,
-   `MAX_ACTIVE_SESSIONS_PER_USER`) and those still apply: an unlimited plan
-   is unlimited up to what the deployment can carry. tests/test_entitlements
-   asserts no plan promises more than the backstop allows.
+   `MAX_ACTIVE_SESSIONS_PER_USER`, `MAX_ENDPOINTS_PER_USER`) and those still
+   apply: an unlimited plan is unlimited up to what the deployment can
+   carry. tests/test_entitlements asserts no plan promises more than the
+   backstop allows.
 """
 
 from dataclasses import dataclass, fields

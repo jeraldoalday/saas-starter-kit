@@ -59,6 +59,7 @@ from app.services.session_service import (
     effective_session_cap,
     start_session,
 )
+from app.services.webhooks.endpoints import MAX_ENDPOINTS_PER_USER
 
 PASSWORD = "s3cret-password"
 
@@ -123,6 +124,7 @@ def test_no_plan_promises_more_than_the_services_will_give():
     for entitlements in ENTITLEMENTS_BY_PLAN.values():
         assert entitlements.max_active_api_keys <= MAX_ACTIVE_KEYS_PER_USER
         assert entitlements.max_active_sessions <= MAX_ACTIVE_SESSIONS_PER_USER
+        assert entitlements.max_webhook_endpoints <= MAX_ENDPOINTS_PER_USER
 
 
 def test_the_free_tier_is_strictly_below_the_paid_one():
