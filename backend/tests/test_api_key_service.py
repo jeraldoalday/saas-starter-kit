@@ -10,6 +10,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.security import hash_password
 from app.models.api_key import ApiKey
@@ -151,6 +152,21 @@ def test_use_is_recorded_but_not_on_every_call(db_session, user):
     later = start + LAST_USED_RESOLUTION + timedelta(minutes=1)
     authenticate_api_key(db_session, raw_key, now=later)
     assert api_key.last_used_at != first_seen
+
+
+def test_a_failure_recording_use_does_not_fail_authentication(
+    db_session, user, monkeypatch
+):
+    """Touching `last_used_at` is best-effort: a key that authenticates
+    correctly must still work when that bookkeeping write fails."""
+    _, raw_key = create_api_key(db_session, user, name="Busy")
+
+    def _explode():
+        raise SQLAlchemyError("disk on fire")
+
+    monkeypatch.setattr(db_session, "commit", _explode)
+
+    assert authenticate_api_key(db_session, raw_key) is not None
 
 
 def test_revocation_is_idempotent(db_session, user):
