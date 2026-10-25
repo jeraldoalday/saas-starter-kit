@@ -47,6 +47,16 @@ describe("Sparkline", () => {
     expect(new Set(ys).size).toBe(1);
   });
 
+  it("renders a flat non-zero series at a consistent height, not NaN", () => {
+    render(<Sparkline values={[5, 5, 5]} label="Steady" />);
+
+    expect(points()).not.toContain("NaN");
+    const ys = points()
+      .split(" ")
+      .map((pair) => Number(pair.split(",")[1]));
+    expect(new Set(ys).size).toBe(1);
+  });
+
   it("renders a single reading as a dot, since one point makes no line", () => {
     const { container } = render(<Sparkline values={[4]} label="One day" />);
 
