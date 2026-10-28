@@ -197,6 +197,7 @@ network call to a third party during an otherwise entirely local request.
 |----------------------|--------|-----------|
 | Active API keys      | 2      | 20        |
 | Signed-in devices    | 3      | 10        |
+| Webhook endpoints    | 1      | 5         |
 | Events per month     | 10,000 | 1,000,000 |
 | Security history     | 30 days| 180 days  |
 
@@ -224,6 +225,9 @@ different because the situations differ:
 - **Signed-in devices** — reaching the cap retires the oldest session
   rather than refusing the login. A downgrade must not be able to lock
   somebody out of an account they hold the password to.
+- **Webhook endpoints** — same shape as API keys: a `409` naming the plan
+  and the number, so delete one or upgrade. An endpoint the owner has
+  switched off does not hold a slot.
 - **Events per month** — a batch that overshoots is *clipped*, not refused:
   the ingest response reports `recorded`, `dropped` and `remaining`, and the
   SPA stops flushing until the allowance resets. Only a batch with no room
