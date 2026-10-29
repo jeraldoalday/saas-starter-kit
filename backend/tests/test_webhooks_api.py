@@ -269,6 +269,18 @@ def test_a_missing_endpoint_is_a_404(client):
     assert response.status_code == 404
 
 
+def test_patching_a_missing_endpoint_is_a_404(client):
+    headers = _session(client)
+
+    response = client.patch(
+        "/api/v1/webhooks/endpoints/11111111-1111-1111-1111-111111111111",
+        json={"description": "new"},
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+
+
 # --- editing --------------------------------------------------------------
 
 
@@ -382,6 +394,17 @@ def test_rotating_replaces_the_secret(client, db_session):
     )
 
 
+def test_rotating_a_missing_endpoints_secret_is_a_404(client):
+    headers = _session(client)
+
+    response = client.post(
+        "/api/v1/webhooks/endpoints/11111111-1111-1111-1111-111111111111/rotate-secret",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+
+
 def test_reveals_are_rate_limited(client):
     from app.api.deps_rate_limit import webhook_secret_rate_limit
 
@@ -429,6 +452,17 @@ def test_a_ping_reaches_a_switched_off_endpoint(client):
     )
 
     assert response.status_code == 202
+
+
+def test_pinging_a_missing_endpoint_is_a_404(client):
+    headers = _session(client)
+
+    response = client.post(
+        "/api/v1/webhooks/endpoints/11111111-1111-1111-1111-111111111111/ping",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
 
 
 # --- the delivery log -----------------------------------------------------
