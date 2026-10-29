@@ -103,10 +103,6 @@ class Quota:
     def exhausted(self) -> bool:
         return is_exhausted(self.limit, self.used)
 
-    @property
-    def unlimited(self) -> bool:
-        return self.limit is None
-
     def allowance(self, requested: int) -> int:
         """How many of `requested` units this quota still has room for.
 
