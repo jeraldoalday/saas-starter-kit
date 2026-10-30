@@ -309,6 +309,57 @@ def test_an_empty_patch_returns_the_endpoint_unchanged(client):
     assert body["description"] == "Primary"
 
 
+def test_editing_an_off_endpoints_description_does_not_claim_it_was_deactivated(
+    client, db_session
+):
+    """is_active only belongs in the audit row when the patch touched it.
+
+    Otherwise an edit to the description or subscription list of an endpoint
+    that already happened to be off would read, on the security page, as the
+    moment it was switched off.
+    """
+    headers = _session(client)
+    created = _create(client, headers).json()
+    client.patch(
+        f"/api/v1/webhooks/endpoints/{created['id']}",
+        json={"is_active": False},
+        headers=headers,
+    )
+
+    client.patch(
+        f"/api/v1/webhooks/endpoints/{created['id']}",
+        json={"description": "Renamed"},
+        headers=headers,
+    )
+
+    entries = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.action == AuditAction.WEBHOOK_ENDPOINT_UPDATED.value)
+        .order_by(AuditLog.created_at)
+        .all()
+    )
+    assert "is_active" in entries[0].context  # the actual on/off flip
+    assert "is_active" not in entries[1].context  # an unrelated rename
+
+
+def test_toggling_an_endpoint_off_does_record_is_active(client, db_session):
+    headers = _session(client)
+    created = _create(client, headers).json()
+
+    client.patch(
+        f"/api/v1/webhooks/endpoints/{created['id']}",
+        json={"is_active": False},
+        headers=headers,
+    )
+
+    entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.action == AuditAction.WEBHOOK_ENDPOINT_UPDATED.value)
+        .one()
+    )
+    assert entry.context["is_active"] is False
+
+
 def test_the_url_cannot_be_edited(client):
     """Moving a URL under a secret the old receiver holds is a new endpoint
     wearing the old one's history."""

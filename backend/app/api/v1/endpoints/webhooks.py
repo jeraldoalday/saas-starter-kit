@@ -230,15 +230,22 @@ def update_webhook_endpoint(
     except EndpointNotFoundError as exc:
         raise _not_found() from exc
 
+    # is_active is only in the context when this patch actually touched it.
+    # Always including the endpoint's current value would show "Reactivated"
+    # or "Deactivated" on the security page for an edit that only changed the
+    # description or the subscription list, against an endpoint that already
+    # happened to be off.
+    context: dict[str, object] = {"endpoint_id": str(endpoint_id)}
+    if data.event_types is not None:
+        context["event_types"] = endpoint.event_types
+    if data.is_active is not None:
+        context["is_active"] = endpoint.is_active
+
     record_audit(
         db,
         AuditAction.WEBHOOK_ENDPOINT_UPDATED,
         user=current_user,
-        context={
-            "endpoint_id": str(endpoint_id),
-            "event_types": endpoint.event_types,
-            "is_active": endpoint.is_active,
-        },
+        context=context,
         **request_origin(request),
     )
     return WebhookEndpointRead.model_validate(endpoint)
