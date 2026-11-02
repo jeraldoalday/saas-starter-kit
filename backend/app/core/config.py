@@ -215,6 +215,13 @@ class Settings(BaseSettings):
                 f"bcrypt_rounds is {self.bcrypt_rounds} (minimum "
                 f"{MIN_PRODUCTION_BCRYPT_ROUNDS} in production)"
             )
+        if self.webhook_allow_insecure_urls:
+            # app/services/webhooks/urls.py's whole SSRF check is a no-op
+            # once this is set — it is meant for pointing an endpoint at a
+            # receiver on the developer's own machine, and left on in
+            # production it lets any account register a webhook URL that
+            # resolves to the deployment's own network.
+            problems.append("webhook_allow_insecure_urls is enabled")
 
         if problems:
             raise ValueError(

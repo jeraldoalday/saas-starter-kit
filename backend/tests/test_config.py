@@ -74,6 +74,21 @@ def test_production_accepts_bcrypt_rounds_at_the_floor():
     assert settings.bcrypt_rounds == MIN_PRODUCTION_BCRYPT_ROUNDS
 
 
+def test_production_rejects_webhook_allow_insecure_urls():
+    with pytest.raises(ValidationError, match="webhook_allow_insecure_urls"):
+        Settings(**_production_kwargs(webhook_allow_insecure_urls=True))
+
+
+def test_production_allows_webhook_allow_insecure_urls_left_off():
+    settings = Settings(**_production_kwargs(webhook_allow_insecure_urls=False))
+
+    assert settings.webhook_allow_insecure_urls is False
+
+
+def test_development_allows_webhook_allow_insecure_urls():
+    assert Settings(webhook_allow_insecure_urls=True).webhook_allow_insecure_urls is True
+
+
 @pytest.mark.parametrize(
     "field",
     ["stripe_secret_key", "stripe_webhook_secret", "stripe_price_id_monthly"],

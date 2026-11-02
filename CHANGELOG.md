@@ -198,6 +198,14 @@ and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Production startup now refuses `WEBHOOK_ALLOW_INSECURE_URLS=true`.**
+  That setting exists to point a webhook endpoint at a receiver on a
+  developer's own machine while building one, and it works by turning off
+  `app/services/webhooks/urls.py`'s whole SSRF check — so left on in
+  production it lets any account register a webhook URL that resolves to
+  the deployment's own network, same as the other insecure defaults this
+  startup check already refuses (a default `SECRET_KEY`, `DEBUG=true`, a
+  below-floor `BCRYPT_ROUNDS`).
 - **The SPA now redeems its refresh token instead of signing out at
   `ACCESS_TOKEN_EXPIRE_MINUTES`.** `POST /api/v1/auth/refresh` existed and
   was fully tested on the backend, but nothing in `frontend/src` ever called
