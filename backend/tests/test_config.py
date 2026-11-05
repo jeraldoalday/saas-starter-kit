@@ -152,3 +152,35 @@ def test_a_configured_webhook_backend_is_accepted():
 @pytest.mark.parametrize("severity", ["info", "warning", "critical"])
 def test_every_severity_is_accepted(severity):
     assert Settings(alert_min_severity=severity).alert_min_severity == severity
+
+
+# --- cors_origins_list -----------------------------------------------------
+#
+# CORS_ORIGINS is a comma-separated env var, so the parsing it goes through
+# to reach CORSMiddleware is worth pinning: a stray space or trailing comma
+# in a deploy's config should not silently add a blank allowed origin or
+# leave one unmatched by whitespace alone.
+
+
+def test_cors_origins_list_splits_on_commas():
+    settings = Settings(cors_origins="https://a.example.com,https://b.example.com")
+
+    assert settings.cors_origins_list == ["https://a.example.com", "https://b.example.com"]
+
+
+def test_cors_origins_list_strips_whitespace_around_each_origin():
+    settings = Settings(cors_origins=" https://a.example.com , https://b.example.com ")
+
+    assert settings.cors_origins_list == ["https://a.example.com", "https://b.example.com"]
+
+
+def test_cors_origins_list_drops_empty_entries():
+    """A trailing comma, or two in a row, must not add a blank origin -
+    CORSMiddleware would otherwise treat that as a real allowed value."""
+    settings = Settings(cors_origins="https://a.example.com,,")
+
+    assert settings.cors_origins_list == ["https://a.example.com"]
+
+
+def test_cors_origins_list_is_empty_for_a_blank_setting():
+    assert Settings(cors_origins="").cors_origins_list == []
