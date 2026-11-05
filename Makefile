@@ -20,6 +20,7 @@ test-frontend:
 lint:
 	cd backend && ruff check .
 	cd frontend && npm run lint
+	cd frontend && npm run typecheck
 
 migrate:
 	cd backend && alembic upgrade head
